@@ -1,0 +1,8 @@
+I would like to create wordpress plugin which will convert every image that is not webp into webp, with predefined quality of the output (like 59%). Aside from converting all images, it must update database such that old non-webp images, in articles, pages and other content, where they may have been used, gets updated to use converted webp images, but also any metadata about the images is updated to reflect converted images (that now became webp format).
+
+How involved is this and can it be done? Wordpress is opensource and you can browse it's source code here:
+https://github.com/WordPress/WordPress
+
+Outline the approach and create implementation that safely converts old images into webp, updates usage in pages, articles, and other places, updates metadata of the image, and finally removes the original non-webp image.Plugin should have validation mode in which it would show that image which gets reformatted, and it's usages searched and replaced, correctly uses new image before old is deleted.
+
+Please keep in mind that each image can be used in multiple places, articles, posts, etc.
