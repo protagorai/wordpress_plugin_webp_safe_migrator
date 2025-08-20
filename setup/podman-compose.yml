@@ -1,0 +1,124 @@
+# WebP Safe Migrator - Podman Compose Configuration
+# Cross-platform container setup using Podman (Docker alternative with Apache 2.0 license)
+
+version: '3.8'
+
+services:
+  wordpress:
+    image: docker.io/library/wordpress:latest
+    container_name: webp-migrator-wordpress
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress123
+      WORDPRESS_DB_NAME: wordpress_webp_test
+      WORDPRESS_DEBUG: 1
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_DEBUG_LOG', true);
+        define('WP_DEBUG_DISPLAY', false);
+        define('SCRIPT_DEBUG', true);
+        define('WP_MEMORY_LIMIT', '512M');
+        define('FS_METHOD', 'direct');
+        
+        /* WebP Safe Migrator specific settings */
+        define('WEBP_MIGRATOR_DEV_MODE', true);
+        define('WEBP_MIGRATOR_LOG_LEVEL', 'debug');
+    volumes:
+      - wordpress_data:/var/www/html
+      - ../src:/var/www/html/wp-content/plugins/webp-safe-migrator:Z
+      - ./uploads:/var/www/html/wp-content/uploads:Z
+      - ./logs:/var/log/wordpress:Z
+    depends_on:
+      - db
+    restart: unless-stopped
+    security_opt:
+      - label=disable  # For SELinux compatibility
+    networks:
+      - webp-migrator-net
+
+  db:
+    image: docker.io/library/mysql:8.0
+    container_name: webp-migrator-mysql
+    environment:
+      MYSQL_DATABASE: wordpress_webp_test
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress123
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_INITDB_SKIP_TZINFO: 1
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d:Z
+      - ./mysql-logs:/var/log/mysql:Z
+    ports:
+      - "3306:3306"
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_allowed_packet=64M
+      --innodb_buffer_pool_size=256M
+    restart: unless-stopped
+    networks:
+      - webp-migrator-net
+
+  phpmyadmin:
+    image: docker.io/phpmyadmin:latest
+    container_name: webp-migrator-phpmyadmin
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: db
+      PMA_USER: root
+      PMA_PASSWORD: root123
+      PMA_ARBITRARY: 1
+      UPLOAD_LIMIT: 100M
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - webp-migrator-net
+
+  wpcli:
+    image: docker.io/library/wordpress:cli
+    container_name: webp-migrator-wpcli
+    volumes:
+      - wordpress_data:/var/www/html
+      - ../src:/var/www/html/wp-content/plugins/webp-safe-migrator:Z
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress123
+      WORDPRESS_DB_NAME: wordpress_webp_test
+    depends_on:
+      - db
+      - wordpress
+    command: tail -f /dev/null  # Keep container running
+    restart: unless-stopped
+    networks:
+      - webp-migrator-net
+
+  # Optional: Redis for caching (useful for testing performance)
+  redis:
+    image: docker.io/library/redis:alpine
+    container_name: webp-migrator-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - webp-migrator-net
+
+volumes:
+  wordpress_data:
+    driver: local
+  db_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  webp-migrator-net:
+    driver: bridge
