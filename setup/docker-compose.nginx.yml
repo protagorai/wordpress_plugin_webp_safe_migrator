@@ -1,11 +1,17 @@
+# WebP Safe Migrator - Docker Compose with Nginx Configuration
+# Alternative to Apache setup using Nginx + PHP-FPM
+
 version: '3.8'
 
 services:
   wordpress:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: webp-migrator-wordpress
+      dockerfile: Dockerfile.nginx
+      args:
+        WORDPRESS_VERSION: "${WORDPRESS_VERSION:-latest}"
+        PHP_VERSION: "${PHP_VERSION:-8.2}"
+    container_name: webp-migrator-wordpress-nginx
     ports:
       - "80:80"
       - "443:443"
@@ -15,7 +21,8 @@ services:
       WORDPRESS_DB_PASSWORD: wordpress123
       WORDPRESS_DB_NAME: wordpress_webp_test
       WORDPRESS_DEBUG: 1
-      ENABLE_SSL: "true"
+      ENABLE_SSL: "${ENABLE_SSL:-true}"
+      CUSTOM_DOMAIN: "${CUSTOM_DOMAIN:-localhost}"
       WORDPRESS_CONFIG_EXTRA: |
         define('WP_DEBUG_LOG', true);
         define('WP_DEBUG_DISPLAY', false);
@@ -36,26 +43,36 @@ services:
     depends_on:
       - db
     restart: unless-stopped
+    networks:
+      - webp-migrator-net
 
   db:
     image: mysql:8.0
-    container_name: webp-migrator-mysql
+    container_name: webp-migrator-mysql-nginx
     environment:
       MYSQL_DATABASE: wordpress_webp_test
       MYSQL_USER: wordpress
       MYSQL_PASSWORD: wordpress123
       MYSQL_ROOT_PASSWORD: root123
+      MYSQL_INITDB_SKIP_TZINFO: 1
     volumes:
       - db_data:/var/lib/mysql
       - ./mysql-init:/docker-entrypoint-initdb.d
     ports:
       - "3306:3306"
-    command: --default-authentication-plugin=mysql_native_password
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_allowed_packet=64M
+      --innodb_buffer_pool_size=256M
     restart: unless-stopped
+    networks:
+      - webp-migrator-net
 
   phpmyadmin:
     image: phpmyadmin:latest
-    container_name: webp-migrator-phpmyadmin
+    container_name: webp-migrator-phpmyadmin-nginx
     ports:
       - "8081:80"
     environment:
@@ -63,13 +80,16 @@ services:
       PMA_USER: root
       PMA_PASSWORD: root123
       PMA_ARBITRARY: 1
+      UPLOAD_LIMIT: 100M
     depends_on:
       - db
     restart: unless-stopped
+    networks:
+      - webp-migrator-net
 
   wpcli:
     image: wordpress:cli
-    container_name: webp-migrator-wpcli
+    container_name: webp-migrator-wpcli-nginx
     volumes:
       - wordpress_data:/var/www/html
       - ../src:/var/www/html/wp-content/plugins/webp-safe-migrator
@@ -83,7 +103,29 @@ services:
       - wordpress
     command: tail -f /dev/null  # Keep container running
     restart: unless-stopped
+    networks:
+      - webp-migrator-net
+
+  # Optional: Redis for caching
+  redis:
+    image: redis:alpine
+    container_name: webp-migrator-redis-nginx
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - webp-migrator-net
 
 volumes:
   wordpress_data:
+    driver: local
   db_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  webp-migrator-net:
+    driver: bridge
