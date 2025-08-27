@@ -1,0 +1,119 @@
+# WebP Safe Migrator - Simple Configuration Example
+# This is a minimal configuration for quick setup
+
+# =============================================================================
+# BASIC CONFIGURATION (customize these values)
+# =============================================================================
+infrastructure:
+  container_engine: "docker"  # or "podman"
+  install_path: "~/webp-migrator-test"
+  ports:
+    http: 80
+    https: 443
+    mysql: 3306
+    phpmyadmin: 8081
+
+ssl:
+  enabled: true
+
+networking:
+  custom_domain: "localhost"
+
+database:
+  engine: "mysql"
+  version: "8.0"
+  name: "wordpress_webp_test"
+  root_user:
+    username: "root"
+    password: "auto"  # Will auto-generate secure password
+  wordpress_user:
+    username: "wordpress"
+    password: "auto"  # Will auto-generate secure password
+  test_user:
+    username: "webp_test"
+    password: "auto"  # Will auto-generate secure password
+
+wordpress:
+  version: "latest"
+  site:
+    title: "WebP Migrator Test Site"
+    url: "http://localhost"
+    language: "en_US"
+  admin_user:
+    username: "admin"
+    password: "auto"  # Will auto-generate secure password
+    email: "admin@webp-test.local"
+  security:
+    auth_key: ""        # Will auto-generate
+    secure_auth_key: "" # Will auto-generate
+    logged_in_key: ""   # Will auto-generate
+    nonce_key: ""       # Will auto-generate
+    auth_salt: ""       # Will auto-generate
+    secure_auth_salt: ""# Will auto-generate
+    logged_in_salt: ""  # Will auto-generate
+    nonce_salt: ""      # Will auto-generate
+  config:
+    debug: true
+    debug_log: true
+    debug_display: false
+    script_debug: true
+    wp_memory_limit: "512M"
+    fs_method: "direct"
+    force_ssl_admin: true
+  content:
+    sample_posts:
+      - title: "WebP Migrator Test Guide"
+        content: "<h2>Welcome to WebP Safe Migrator Test Site</h2><p>Go to Media → WebP Migrator to start testing.</p>"
+        status: "publish"
+        type: "page"
+
+php:
+  version: "8.2"
+  settings:
+    memory_limit: "512M"
+    max_execution_time: 300
+    upload_max_filesize: "100M"
+    post_max_size: "100M"
+  extensions:
+    - "gd"
+    - "exif"
+    - "bcmath"
+    - "opcache"
+    - "imagick"
+
+webserver:
+  type: "apache"
+
+plugins:
+  install:
+    - slug: "webp-safe-migrator"
+      source: "local"
+      local_path: "../src"
+      activate: true
+  webp_migrator:
+    dev_mode: true
+    log_level: "debug"
+    quality: 75
+    batch_size: 10
+
+services:
+  phpmyadmin:
+    enabled: true
+    upload_limit: "100M"
+  redis:
+    enabled: false
+
+development:
+  sample_data:
+    install_sample_content: true
+    install_test_images: true
+
+automation:
+  auto_install_wordpress: true
+  auto_activate_plugins: true
+  auto_create_content: true
+  auto_start_services: true
+  skip_confirmations: false
+  auto_open_browser: true
+  wait_for_services: true
+  max_wait_time: 300

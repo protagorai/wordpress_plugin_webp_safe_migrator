@@ -1,0 +1,487 @@
+# WebP Safe Migrator - Complete Configuration Template
+# This YAML file contains ALL configurable values for autonomous setup
+# Copy this file and modify values as needed for your environment
+
+# =============================================================================
+# INFRASTRUCTURE CONFIGURATION
+# =============================================================================
+infrastructure:
+  # Container Engine Selection
+  container_engine: "docker"  # docker, podman, auto
+  
+  # Installation Directory
+  install_path: "~/webp-migrator-test"
+  
+  # Operating System Detection Override
+  platform_override: ""  # linux, macos, windows, wsl, auto
+  
+  # Ports Configuration
+  ports:
+    http: 80           # HTTP port (default: 80)
+    https: 443         # HTTPS port (default: 443)  
+    mysql: 3306        # MySQL port (default: 3306)
+    phpmyadmin: 8081   # phpMyAdmin port (default: 8081)
+    redis: 6379        # Redis port (default: 6379)
+    # Alternative ports for development (when standard ports occupied)
+    alt_http: 8080
+    alt_https: 8443
+    alt_mysql: 3307
+    alt_phpmyadmin: 8082
+
+# =============================================================================
+# SSL/TLS CONFIGURATION
+# =============================================================================
+ssl:
+  enabled: true
+  certificate_type: "self_signed"  # self_signed, letsencrypt, custom
+  
+  # Self-signed certificate details
+  self_signed:
+    country: "US"
+    state: "Development"
+    locality: "Local"
+    organization: "WebP Migrator"
+    organizational_unit: "Development"
+    common_name: "localhost"
+    email: "dev@webp-migrator.local"
+    days_valid: 365
+    subject_alt_names:
+      - "DNS:localhost"
+      - "DNS:webp-migrator.local"
+      - "DNS:*.webp-migrator.local"
+      - "IP:127.0.0.1"
+  
+  # Let's Encrypt configuration
+  letsencrypt:
+    email: "admin@example.com"
+    domains: ["webp-migrator.example.com"]
+    staging: true
+  
+  # Custom certificate paths
+  custom:
+    certificate_file: "/path/to/cert.pem"
+    private_key_file: "/path/to/key.pem"
+    ca_bundle_file: "/path/to/ca-bundle.pem"
+
+# =============================================================================
+# DOMAIN AND NETWORKING
+# =============================================================================
+networking:
+  # Primary domain for the WordPress site
+  custom_domain: "localhost"
+  
+  # Additional domains/aliases
+  domain_aliases:
+    - "webp-migrator.local"
+    - "wp.local"
+  
+  # Network configuration
+  container_network: "webp-migrator-net"
+  network_driver: "bridge"
+  
+  # Host file entries (for development)
+  hosts_entries:
+    - "127.0.0.1 webp-migrator.local"
+    - "127.0.0.1 wp.local"
+
+# =============================================================================
+# DATABASE CONFIGURATION
+# =============================================================================
+database:
+  # Database Engine
+  engine: "mysql"  # mysql, mariadb, postgresql
+  version: "8.0"
+  
+  # Database Connection Details
+  host: "db"  # For containers, use service name
+  name: "wordpress_webp_test"
+  charset: "utf8mb4"
+  collation: "utf8mb4_unicode_ci"
+  
+  # Database Users
+  root_user:
+    username: "root"
+    password: "root123"
+  
+  wordpress_user:
+    username: "wordpress"
+    password: "wordpress123"
+    
+  # Additional test user
+  test_user:
+    username: "webp_test"
+    password: "webp_test123"
+  
+  # Performance Settings
+  performance:
+    max_allowed_packet: "67108864"  # 64MB
+    innodb_buffer_pool_size: "268435456"  # 256MB
+    max_connections: 151
+    query_cache_size: "16M"
+    
+  # Backup Configuration
+  backup:
+    enabled: true
+    retention_days: 30
+    schedule: "0 2 * * *"  # Daily at 2 AM
+
+# =============================================================================
+# WORDPRESS CONFIGURATION
+# =============================================================================
+wordpress:
+  # WordPress Version
+  version: "latest"  # latest, 6.4, 6.3, etc.
+  
+  # Site Configuration
+  site:
+    title: "WebP Migrator Test Site"
+    tagline: "Testing WebP conversion and migration"
+    url: "http://localhost"
+    language: "en_US"  # en_US, fr_FR, de_DE, etc.
+    timezone: "UTC"
+    date_format: "F j, Y"
+    time_format: "g:i a"
+  
+  # Admin User Configuration
+  admin_user:
+    username: "admin"
+    password: "admin123!"
+    email: "admin@webp-test.local"
+    first_name: "WebP"
+    last_name: "Admin"
+    role: "administrator"
+    
+  # Additional Users (for testing)
+  additional_users:
+    - username: "editor"
+      password: "editor123!"
+      email: "editor@webp-test.local"
+      role: "editor"
+    - username: "author"
+      password: "author123!"
+      email: "author@webp-test.local"
+      role: "author"
+  
+  # WordPress Security Keys & Salts (auto-generate if empty)
+  security:
+    auth_key: ""
+    secure_auth_key: ""
+    logged_in_key: ""
+    nonce_key: ""
+    auth_salt: ""
+    secure_auth_salt: ""
+    logged_in_salt: ""
+    nonce_salt: ""
+    
+  # WordPress Configuration Constants
+  config:
+    debug: true
+    debug_log: true
+    debug_display: false
+    script_debug: true
+    wp_memory_limit: "512M"
+    fs_method: "direct"
+    force_ssl_admin: true
+    automatic_updater_disabled: true
+    wp_post_revisions: 3
+    media_trash: true
+    
+  # WordPress Core Features
+  features:
+    enable_multisite: false
+    allow_file_edit: false
+    disallow_file_mods: false
+    wp_cron_disabled: false
+    
+  # Content Configuration
+  content:
+    default_posts: true  # Create sample posts
+    default_pages: true  # Create sample pages
+    sample_content: true # Create WebP test content
+    
+    # Custom post types to create
+    sample_posts:
+      - title: "WebP Migration Test Post"
+        content: "This post contains images for testing WebP conversion."
+        status: "publish"
+        type: "post"
+      - title: "WebP Migrator Guide"
+        content: "Complete guide for using the WebP Safe Migrator plugin."
+        status: "publish"  
+        type: "page"
+
+# =============================================================================
+# PHP CONFIGURATION
+# =============================================================================
+php:
+  version: "8.2"
+  
+  # PHP Settings
+  settings:
+    memory_limit: "512M"
+    max_execution_time: 300
+    max_input_time: 300
+    max_input_vars: 3000
+    upload_max_filesize: "100M"
+    post_max_size: "100M"
+    file_uploads: "On"
+    allow_url_fopen: "On"
+    display_errors: "On"
+    log_errors: "On"
+    error_log: "/var/log/php_errors.log"
+    date_timezone: "UTC"
+    
+  # OpCache Settings
+  opcache:
+    enable: 1
+    memory_consumption: 128
+    interned_strings_buffer: 8
+    max_accelerated_files: 4000
+    revalidate_freq: 2
+    fast_shutdown: 1
+    
+  # Required Extensions
+  extensions:
+    - "gd"
+    - "exif" 
+    - "bcmath"
+    - "opcache"
+    - "redis"
+    - "imagick"
+    - "zip"
+    - "curl"
+    - "mbstring"
+    - "xml"
+    - "json"
+
+# =============================================================================
+# WEB SERVER CONFIGURATION
+# =============================================================================
+webserver:
+  type: "apache"  # apache, nginx
+  
+  # Apache Configuration
+  apache:
+    modules:
+      - "ssl"
+      - "rewrite"
+      - "headers"
+      - "expires"
+      - "deflate"
+      - "authz_core"
+      - "dir"
+      - "mime"
+    
+    # Security Settings
+    security:
+      server_tokens: "Prod"
+      server_signature: "Off"
+      hide_version: true
+    
+    # Performance Settings
+    performance:
+      compression: true
+      expires_headers: true
+      keep_alive: true
+      max_keep_alive_requests: 100
+  
+  # Nginx Configuration
+  nginx:
+    worker_processes: "auto"
+    worker_connections: 1024
+    
+    # Performance Settings
+    performance:
+      gzip: true
+      gzip_vary: true
+      gzip_comp_level: 6
+      client_max_body_size: "100M"
+
+# =============================================================================
+# PLUGIN CONFIGURATION
+# =============================================================================
+plugins:
+  # Plugins to automatically install and activate
+  install:
+    # Core development plugins
+    - slug: "webp-safe-migrator"
+      source: "local"  # local, wordpress_org, github, zip_url
+      local_path: "../src"
+      activate: true
+      
+    # Additional helpful plugins for testing
+    - slug: "query-monitor"
+      source: "wordpress_org"
+      activate: true
+      
+    - slug: "debug-bar"
+      source: "wordpress_org"
+      activate: false
+      
+    # Example external plugin
+    - slug: "custom-plugin"
+      source: "zip_url"
+      url: "https://example.com/plugin.zip"
+      activate: false
+      
+  # Plugin-specific configurations
+  webp_migrator:
+    dev_mode: true
+    log_level: "debug"
+    quality: 75
+    backup_enabled: true
+    validation_mode: true
+    batch_size: 10
+    
+# =============================================================================
+# TESTING AND DEVELOPMENT
+# =============================================================================
+development:
+  # Sample Data
+  sample_data:
+    install_sample_content: true
+    install_test_images: true
+    create_image_variations: true
+    
+    # Test image specifications
+    test_images:
+      - name: "sample1.jpg"
+        size: "800x600"
+        format: "jpg"
+        background: "red"
+      - name: "sample2.png" 
+        size: "1200x800"
+        format: "png"
+        background: "blue"
+      - name: "sample3.gif"
+        size: "400x300"
+        format: "gif"
+        background: "green"
+        
+  # Development Tools
+  tools:
+    wp_cli: true
+    composer: true
+    node_js: false
+    
+  # Debugging
+  debug:
+    enable_query_monitor: true
+    enable_debug_bar: true
+    log_all_queries: false
+    log_slow_queries: true
+    
+# =============================================================================
+# SERVICES CONFIGURATION  
+# =============================================================================
+services:
+  # Redis Cache
+  redis:
+    enabled: false
+    version: "alpine"
+    max_memory: "256mb"
+    
+  # Elasticsearch (for advanced search)
+  elasticsearch:
+    enabled: false
+    version: "7.17"
+    
+  # MailHog (for email testing)
+  mailhog:
+    enabled: false
+    web_port: 8025
+    smtp_port: 1025
+    
+  # phpMyAdmin
+  phpmyadmin:
+    enabled: true
+    upload_limit: "100M"
+    
+# =============================================================================
+# AUTOMATION SETTINGS
+# =============================================================================
+automation:
+  # Automated Setup Options
+  auto_install_wordpress: true
+  auto_activate_plugins: true
+  auto_create_content: true
+  auto_start_services: true
+  
+  # Skip confirmations (for CI/CD)
+  skip_confirmations: false
+  
+  # Browser automation
+  auto_open_browser: true
+  
+  # Health checks
+  wait_for_services: true
+  max_wait_time: 300  # seconds
+  
+  # Post-installation actions
+  post_install:
+    - "activate_plugins"
+    - "flush_rewrite_rules"
+    - "create_test_content"
+    - "set_permissions"
+    
+# =============================================================================
+# BACKUP AND MAINTENANCE
+# =============================================================================
+maintenance:
+  # Backup Configuration
+  backup:
+    enabled: true
+    schedule: "daily"
+    retention: 7  # days
+    include_uploads: true
+    include_database: true
+    
+  # Log Management
+  logging:
+    max_size: "100M"
+    max_files: 5
+    level: "info"  # debug, info, warning, error
+    
+  # Update Management
+  updates:
+    auto_update_core: false
+    auto_update_plugins: false
+    auto_update_themes: false
+    
+# =============================================================================
+# ENVIRONMENT OVERRIDES
+# =============================================================================
+# Override settings based on environment
+environments:
+  development:
+    wordpress:
+      config:
+        debug: true
+        debug_log: true
+        debug_display: true
+    php:
+      settings:
+        display_errors: "On"
+        
+  staging:
+    wordpress:
+      config:
+        debug: true
+        debug_log: true
+        debug_display: false
+    ssl:
+      letsencrypt:
+        staging: true
+        
+  production:
+    wordpress:
+      config:
+        debug: false
+        debug_log: false
+        debug_display: false
+    ssl:
+      letsencrypt:
+        staging: false
+    php:
+      settings:
+        display_errors: "Off"
