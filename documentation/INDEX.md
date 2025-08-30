@@ -50,8 +50,7 @@
 
 ### 📁 Implementation Files
 - **[Source Code](../src/)** - Plugin implementation
-  - [Main Plugin](../src/webp-safe-migrator.php) - Current production version
-  - [Prototype](../src/webp-safe-migrator-prototype.php) - Initial implementation
+  - [Main Plugin](../src/webp-safe-migrator.php) - Production-ready multi-format image converter
 - **[Enhanced Classes](../includes/)** - Advanced feature implementations
   - [Converter Class](../includes/class-webp-migrator-converter.php) - Enhanced image conversion
   - [Queue System](../includes/class-webp-migrator-queue.php) - Background processing

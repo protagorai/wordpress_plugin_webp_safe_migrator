@@ -16,6 +16,11 @@ class WebP_Safe_Migrator {
     const BACKUP_META = '_webp_migrator_backup_dir';
     const REPORT_META = '_webp_migrator_report';         // JSON-encoded per-attachment report
     const DEFAULT_BASE_MIMES = ['image/jpeg','image/png','image/gif'];
+    const SUPPORTED_TARGET_FORMATS = [
+        'webp' => ['mime' => 'image/webp', 'ext' => 'webp', 'quality_range' => [1, 100], 'default_quality' => 75],
+        'avif' => ['mime' => 'image/avif', 'ext' => 'avif', 'quality_range' => [1, 100], 'default_quality' => 60],
+        'jxl'  => ['mime' => 'image/jxl',  'ext' => 'jxl',  'quality_range' => [1, 100], 'default_quality' => 80],
+    ];
 
     /** @var array */
     private $settings;
@@ -25,11 +30,17 @@ class WebP_Safe_Migrator {
 
     public function __construct() {
         $this->settings = wp_parse_args(get_option(self::OPTION, []), [
-            'quality'     => 59,
-            'batch_size'  => 10,
-            'validation'  => 1,     // 1 = validate (keep originals), 0 = delete originals immediately
-            'skip_folders'=> "",    // textarea, one per line (relative to uploads), substring match
-            'skip_mimes'  => "",    // comma/space separated MIME types to skip (e.g. "image/gif")
+            'target_format'     => 'webp',      // webp, avif, jxl
+            'quality'           => 75,          // General quality setting
+            'webp_quality'      => 75,          // WebP-specific quality
+            'avif_quality'      => 60,          // AVIF-specific quality  
+            'avif_speed'        => 6,           // AVIF compression speed (0-10)
+            'jxl_quality'       => 80,          // JPEG XL quality
+            'jxl_effort'        => 7,           // JPEG XL compression effort (1-9)
+            'batch_size'        => 10,
+            'validation'        => 1,           // 1 = validate (keep originals), 0 = delete originals immediately
+            'skip_folders'      => "",          // textarea, one per line (relative to uploads), substring match
+            'skip_mimes'        => "",          // comma/space separated MIME types to skip (e.g. "image/gif")
         ]);
 
         add_action('admin_menu', [$this, 'menu']);
@@ -52,21 +63,82 @@ class WebP_Safe_Migrator {
     }
 
     public function on_activate() {
-        // Check for WebP support
-        $gd_webp = function_exists('imagewebp');
-        $imagick_webp = class_exists('Imagick');
-        if ($imagick_webp) {
+        // Check for format support
+        $supported_formats = $this->get_supported_formats();
+        if (empty($supported_formats)) {
+            deactivate_plugins(plugin_basename(__FILE__));
+            wp_die('WebP Safe Migrator requires support for at least one modern image format (WebP, AVIF, or JPEG XL).<br>Available extensions: ' . 
+                   (function_exists('imagewebp') ? 'GD-WebP ' : '') .
+                   (class_exists('Imagick') ? 'Imagick ' : '') .
+                   '<br>Please ensure your server has GD or Imagick with modern format support.');
+        }
+    }
+
+    /**
+     * Get list of supported target formats based on available PHP extensions
+     */
+    private function get_supported_formats(): array {
+        $supported = [];
+        
+        // Check WebP support
+        if (function_exists('imagewebp')) {
+            $supported['webp'] = self::SUPPORTED_TARGET_FORMATS['webp'];
+        } elseif (class_exists('Imagick')) {
             try {
                 $i = new Imagick();
-                $imagick_webp = in_array('WEBP', $i->queryFormats('WEBP'), true);
-            } catch (Throwable $e) {
-                $imagick_webp = false;
-            }
+                if (in_array('WEBP', $i->queryFormats('WEBP'), true)) {
+                    $supported['webp'] = self::SUPPORTED_TARGET_FORMATS['webp'];
+                }
+            } catch (Throwable $e) {}
         }
-        if (!$gd_webp && !$imagick_webp) {
-            deactivate_plugins(plugin_basename(__FILE__));
-            wp_die('WebP Safe Migrator requires GD (imagewebp) or Imagick with WEBP support.');
+        
+        // Check AVIF support
+        if (function_exists('imageavif')) {
+            $supported['avif'] = self::SUPPORTED_TARGET_FORMATS['avif'];
+        } elseif (class_exists('Imagick')) {
+            try {
+                $i = new Imagick();
+                if (in_array('AVIF', $i->queryFormats('AVIF'), true)) {
+                    $supported['avif'] = self::SUPPORTED_TARGET_FORMATS['avif'];
+                }
+            } catch (Throwable $e) {}
         }
+        
+        // Check JPEG XL support (primarily Imagick)
+        if (class_exists('Imagick')) {
+            try {
+                $i = new Imagick();
+                if (in_array('JXL', $i->queryFormats('JXL'), true)) {
+                    $supported['jxl'] = self::SUPPORTED_TARGET_FORMATS['jxl'];
+                }
+            } catch (Throwable $e) {}
+        }
+        
+        return $supported;
+    }
+
+    /**
+     * Get format-specific options for conversion
+     */
+    private function get_format_options($target_format, $override_quality = null): array {
+        $options = [];
+        $format_key = $target_format . '_quality';
+        
+        // Use override quality if provided, otherwise use format-specific setting
+        $options['quality'] = $override_quality ?? ($this->settings[$format_key] ?? 
+                             self::SUPPORTED_TARGET_FORMATS[$target_format]['default_quality']);
+        
+        // Add format-specific options
+        switch ($target_format) {
+            case 'avif':
+                $options['speed'] = $this->settings['avif_speed'] ?? 6;
+                break;
+            case 'jxl':
+                $options['effort'] = $this->settings['jxl_effort'] ?? 7;
+                break;
+        }
+        
+        return $options;
     }
 
     public function menu() {
@@ -85,19 +157,32 @@ class WebP_Safe_Migrator {
         if (!current_user_can('manage_options')) return;
         if (!isset($_POST[self::NONCE]) || !wp_verify_nonce($_POST[self::NONCE], 'save_settings')) return;
 
-        $quality    = isset($_POST['quality']) ? max(1, min(100, (int)$_POST['quality'])) : 59;
-        $batch_size = isset($_POST['batch_size']) ? max(1, min(1000, (int)$_POST['batch_size'])) : 10;
-        $validation = isset($_POST['validation']) ? 1 : 0;
+        $target_format  = isset($_POST['target_format']) && array_key_exists($_POST['target_format'], self::SUPPORTED_TARGET_FORMATS) 
+                          ? (string)$_POST['target_format'] : 'webp';
+        $quality        = isset($_POST['quality']) ? max(1, min(100, (int)$_POST['quality'])) : 75;
+        $webp_quality   = isset($_POST['webp_quality']) ? max(1, min(100, (int)$_POST['webp_quality'])) : 75;
+        $avif_quality   = isset($_POST['avif_quality']) ? max(1, min(100, (int)$_POST['avif_quality'])) : 60;
+        $avif_speed     = isset($_POST['avif_speed']) ? max(0, min(10, (int)$_POST['avif_speed'])) : 6;
+        $jxl_quality    = isset($_POST['jxl_quality']) ? max(1, min(100, (int)$_POST['jxl_quality'])) : 80;
+        $jxl_effort     = isset($_POST['jxl_effort']) ? max(1, min(9, (int)$_POST['jxl_effort'])) : 7;
+        $batch_size     = isset($_POST['batch_size']) ? max(1, min(1000, (int)$_POST['batch_size'])) : 10;
+        $validation     = isset($_POST['validation']) ? 1 : 0;
 
         $skip_folders_raw = isset($_POST['skip_folders']) ? (string)$_POST['skip_folders'] : '';
         $skip_mimes_raw   = isset($_POST['skip_mimes']) ? (string)$_POST['skip_mimes'] : '';
 
         $this->settings = [
-            'quality'     => $quality,
-            'batch_size'  => $batch_size,
-            'validation'  => $validation,
-            'skip_folders'=> $skip_folders_raw,
-            'skip_mimes'  => $skip_mimes_raw,
+            'target_format'     => $target_format,
+            'quality'           => $quality,
+            'webp_quality'      => $webp_quality,
+            'avif_quality'      => $avif_quality,
+            'avif_speed'        => $avif_speed,
+            'jxl_quality'       => $jxl_quality,
+            'jxl_effort'        => $jxl_effort,
+            'batch_size'        => $batch_size,
+            'validation'        => $validation,
+            'skip_folders'      => $skip_folders_raw,
+            'skip_mimes'        => $skip_mimes_raw,
         ];
         update_option(self::OPTION, $this->settings);
         add_settings_error('webp_safe_migrator', 'saved', 'Settings saved.', 'updated');
@@ -113,7 +198,7 @@ class WebP_Safe_Migrator {
 
         // Run batch conversion
         if (isset($_POST['webp_migrator_run']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'run_batch')) {
-            $batch = $this->get_non_webp_attachments($this->settings['batch_size']);
+            $batch = $this->get_non_target_format_attachments($this->settings['batch_size']);
             $processed = 0;
             foreach ($batch as $att_id) {
                 if ($this->process_attachment((int)$att_id, $this->settings['quality'], $this->current_validation_mode())) {
@@ -157,27 +242,83 @@ class WebP_Safe_Migrator {
 
     public function render_main() {
         settings_errors('webp_safe_migrator');
-        $quality    = (int)$this->settings['quality'];
-        $batch_size = (int)$this->settings['batch_size'];
-        $validation = (int)$this->settings['validation'];
-        $skip_folders = (string)$this->settings['skip_folders'];
-        $skip_mimes   = (string)$this->settings['skip_mimes'];
+        $target_format = (string)($this->settings['target_format'] ?? 'webp');
+        $quality       = (int)$this->settings['quality'];
+        $webp_quality  = (int)($this->settings['webp_quality'] ?? 75);
+        $avif_quality  = (int)($this->settings['avif_quality'] ?? 60);
+        $avif_speed    = (int)($this->settings['avif_speed'] ?? 6);
+        $jxl_quality   = (int)($this->settings['jxl_quality'] ?? 80);
+        $jxl_effort    = (int)($this->settings['jxl_effort'] ?? 7);
+        $batch_size    = (int)$this->settings['batch_size'];
+        $validation    = (int)$this->settings['validation'];
+        $skip_folders  = (string)$this->settings['skip_folders'];
+        $skip_mimes    = (string)$this->settings['skip_mimes'];
+        
+        $supported_formats = $this->get_supported_formats();
+        $target_format_info = self::SUPPORTED_TARGET_FORMATS[$target_format] ?? self::SUPPORTED_TARGET_FORMATS['webp'];
         ?>
         <div class="wrap">
-            <h1>WebP Safe Migrator</h1>
-            <p>Convert all non-WebP images to WebP at the chosen quality, update usages and metadata safely, then delete originals after validation.</p>
+            <h1>Modern Image Migrator</h1>
+            <p>Convert images to modern formats (WebP, AVIF, JPEG XL) with optimal quality settings. Update all usages and metadata safely, then delete originals after validation.</p>
 
             <form method="post">
                 <?php wp_nonce_field('save_settings', self::NONCE); ?>
                 <table class="form-table" role="presentation">
-                    <tr><th scope="row"><label for="quality">Quality (0–100)</label></th>
-                        <td><input type="number" name="quality" id="quality" min="1" max="100" value="<?php echo esc_attr($quality); ?>"></td>
+                    <tr><th scope="row"><label for="target_format">Target Format</label></th>
+                        <td>
+                            <select name="target_format" id="target_format" onchange="toggleFormatOptions(this.value)">
+                                <?php foreach ($supported_formats as $format => $info): ?>
+                                    <option value="<?php echo esc_attr($format); ?>" <?php selected($target_format, $format); ?>>
+                                        <?php echo esc_html(strtoupper($format)); ?> 
+                                        (<?php echo esc_html($info['mime']); ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Modern format to convert images to. Server support detected automatically.</p>
+                        </td>
                     </tr>
+                    
+                    <tr><th scope="row"><label for="quality">Default Quality (1–100)</label></th>
+                        <td><input type="number" name="quality" id="quality" min="1" max="100" value="<?php echo esc_attr($quality); ?>">
+                        <p class="description">General quality setting used when format-specific quality isn't set.</p></td>
+                    </tr>
+                    
+                    <!-- WebP Settings -->
+                    <tr class="format-settings webp-settings" style="<?php echo $target_format !== 'webp' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="webp_quality">WebP Quality (1–100)</label></th>
+                        <td><input type="number" name="webp_quality" id="webp_quality" min="1" max="100" value="<?php echo esc_attr($webp_quality); ?>">
+                        <p class="description">WebP compression quality. Higher = better quality, larger files.</p></td>
+                    </tr>
+                    
+                    <!-- AVIF Settings -->
+                    <tr class="format-settings avif-settings" style="<?php echo $target_format !== 'avif' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="avif_quality">AVIF Quality (1–100)</label></th>
+                        <td><input type="number" name="avif_quality" id="avif_quality" min="1" max="100" value="<?php echo esc_attr($avif_quality); ?>">
+                        <p class="description">AVIF compression quality. AVIF typically achieves better quality at lower values than WebP.</p></td>
+                    </tr>
+                    <tr class="format-settings avif-settings" style="<?php echo $target_format !== 'avif' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="avif_speed">AVIF Speed (0–10)</label></th>
+                        <td><input type="number" name="avif_speed" id="avif_speed" min="0" max="10" value="<?php echo esc_attr($avif_speed); ?>">
+                        <p class="description">Compression speed vs efficiency. 0=slowest/best, 10=fastest/lower quality. 6 is balanced.</p></td>
+                    </tr>
+                    
+                    <!-- JPEG XL Settings -->
+                    <tr class="format-settings jxl-settings" style="<?php echo $target_format !== 'jxl' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="jxl_quality">JPEG XL Quality (1–100)</label></th>
+                        <td><input type="number" name="jxl_quality" id="jxl_quality" min="1" max="100" value="<?php echo esc_attr($jxl_quality); ?>">
+                        <p class="description">JPEG XL compression quality. Higher values provide better quality.</p></td>
+                    </tr>
+                    <tr class="format-settings jxl-settings" style="<?php echo $target_format !== 'jxl' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="jxl_effort">JPEG XL Effort (1–9)</label></th>
+                        <td><input type="number" name="jxl_effort" id="jxl_effort" min="1" max="9" value="<?php echo esc_attr($jxl_effort); ?>">
+                        <p class="description">Compression effort. Higher values take longer but achieve better compression.</p></td>
+                    </tr>
+                    
                     <tr><th scope="row"><label for="batch_size">Batch size</label></th>
                         <td><input type="number" name="batch_size" id="batch_size" min="1" max="1000" value="<?php echo esc_attr($batch_size); ?>"></td>
                     </tr>
                     <tr><th scope="row"><label for="validation">Validation mode</label></th>
-                        <td><label><input type="checkbox" name="validation" <?php checked($validation, 1); ?>> Keep originals until you press “Commit”</label></td>
+                        <td><label><input type="checkbox" name="validation" <?php checked($validation, 1); ?>> Keep originals until you press "Commit"</label></td>
                     </tr>
                     <tr><th scope="row"><label for="skip_folders">Skip folders</label></th>
                         <td>
@@ -193,6 +334,25 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                         </td>
                     </tr>
                 </table>
+                
+                <script type="text/javascript">
+                function toggleFormatOptions(format) {
+                    // Hide all format-specific settings
+                    var allSettings = document.querySelectorAll('.format-settings');
+                    allSettings.forEach(function(el) { el.style.display = 'none'; });
+                    
+                    // Show settings for selected format
+                    var formatSettings = document.querySelectorAll('.' + format + '-settings');
+                    formatSettings.forEach(function(el) { el.style.display = 'table-row'; });
+                }
+                
+                // Initialize on page load
+                document.addEventListener('DOMContentLoaded', function() {
+                    var format = document.getElementById('target_format').value;
+                    toggleFormatOptions(format);
+                });
+                </script>
+                
                 <p>
                     <button class="button button-primary" name="webp_migrator_save_settings" value="1">Save settings</button>
                 </p>
@@ -201,6 +361,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             <hr/>
             <h2>Run batch</h2>
             <p><strong>Tip:</strong> back up your database and uploads before large migrations.</p>
+            <p><strong>Current target:</strong> Converting to <strong><?php echo esc_html(strtoupper($target_format)); ?></strong> format</p>
             <form method="post">
                 <?php wp_nonce_field('run_batch', self::NONCE); ?>
                 <button class="button button-secondary" name="webp_migrator_run" value="1">Process next batch</button>
@@ -212,7 +373,8 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             <?php $this->render_pending_commits(); ?>
 
             <hr/>
-            <h2>Non-WebP attachments (preview)</h2>
+            <h2>Images to convert (preview)</h2>
+            <p>Showing images that will be converted to <strong><?php echo esc_html(strtoupper($target_format)); ?></strong> format:</p>
             <?php $this->render_queue_preview(); ?>
         </div>
         <?php
@@ -400,7 +562,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     }
 
     private function render_queue_preview() {
-        $ids = $this->get_non_webp_attachments(20);
+        $ids = $this->get_non_target_format_attachments(20);
         if (!$ids) { echo '<p>None found (or all skipped by filters).</p>'; return; }
         echo '<ul>';
         foreach ($ids as $id) {
@@ -419,8 +581,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         return [ $folders, $mimes ];
     }
 
-    /** Return $limit attachment IDs matching base mimes minus skipped mimes; apply folder skipping */
-    public function get_non_webp_attachments($limit = 10): array {
+    /** Return $limit attachment IDs matching base mimes that aren't already in target format */
+    public function get_non_target_format_attachments($limit = 10): array {
+        $target_format = $this->settings['target_format'] ?? 'webp';
+        $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
         global $wpdb;
         [$skip_folders, $skip_mimes] = $this->get_skip_rules();
 
@@ -435,9 +599,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             "SELECT ID FROM {$wpdb->posts}
              WHERE post_type='attachment'
                AND post_mime_type IN ($in)
+               AND post_mime_type != %s
              ORDER BY ID ASC
              LIMIT %d",
-            ...$target_mimes, (int)$fetch
+            ...array_merge($target_mimes, [$target_mime, (int)$fetch])
         );
         $candidates = $wpdb->get_col($sql);
 
@@ -479,7 +644,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         if (!$file || !file_exists($file)) return false;
 
         $mime = get_post_mime_type($att_id);
-        if ($mime === 'image/webp') return true;
+        $target_format = $this->settings['target_format'] ?? 'webp';
+        $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
+        
+        if ($mime === $target_mime) return true;
 
         // Skip animated GIF unless animated WebP is implemented
         if ($mime === 'image/gif' && $this->is_animated_gif($file)) {
@@ -491,16 +659,20 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         $old_meta = wp_get_attachment_metadata($att_id);
         if (!$old_meta || empty($old_meta['file'])) $old_meta = $this->build_metadata_fallback($file, $att_id);
 
+        $target_format = $this->settings['target_format'] ?? 'webp';
+        $target_ext = self::SUPPORTED_TARGET_FORMATS[$target_format]['ext'] ?? 'webp';
+        
         $old_rel      = $old_meta['file'];                                   // '2025/08/image.jpg'
         $old_dir_rel  = trailingslashit(dirname($old_rel));
         $old_basename = wp_basename($old_rel);
-        $new_rel      = $old_dir_rel . preg_replace('/\.\w+$/', '.webp', $old_basename);
+        $new_rel      = $old_dir_rel . preg_replace('/\.\w+$/', '.' . $target_ext, $old_basename);
         $new_path     = trailingslashit($uploads['basedir']) . $new_rel;
 
         if (!wp_mkdir_p(dirname($new_path))) return false;
 
-        // Convert original → WebP
-        $converted = $this->convert_to_webp($file, $new_path, $quality);
+        // Convert original to target format
+        $format_options = $this->get_format_options($target_format, $quality);
+        $converted = $this->convert_to_format($file, $new_path, $target_format, $format_options);
         if (!$converted) {
             update_post_meta($att_id, self::STATUS_META, 'convert_failed');
             return false;
@@ -520,9 +692,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         $report = $this->replace_everywhere($map);
 
         // Update attachment post + metas
+        $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
         wp_update_post([
             'ID'             => $att_id,
-            'post_mime_type' => 'image/webp',
+            'post_mime_type' => $target_mime,
             'guid'           => $uploads['baseurl'] . '/' . $new_meta['file'],
         ]);
         update_post_meta($att_id, '_wp_attached_file', $new_meta['file']);
@@ -562,12 +735,142 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         return ['file' => $rel, 'sizes' => []];
     }
 
-    private function convert_to_webp($src, $dest, $quality) {
+    /**
+     * Convert image to specified format with format-specific options
+     */
+    private function convert_to_format($src, $dest, $target_format, $options = []) {
+        if (!array_key_exists($target_format, self::SUPPORTED_TARGET_FORMATS)) {
+            return false;
+        }
+        
+        $format_info = self::SUPPORTED_TARGET_FORMATS[$target_format];
+        $quality = $options['quality'] ?? $format_info['default_quality'];
+        
+        // Try WordPress image editor first
         $editor = wp_get_image_editor($src);
-        if (is_wp_error($editor)) return false;
-        if (method_exists($editor, 'set_quality')) $editor->set_quality((int)$quality);
-        $saved = $editor->save($dest, 'image/webp');
-        return !is_wp_error($saved);
+        if (!is_wp_error($editor)) {
+            if (method_exists($editor, 'set_quality')) {
+                $editor->set_quality((int)$quality);
+            }
+            $saved = $editor->save($dest, $format_info['mime']);
+            if (!is_wp_error($saved)) {
+                return true;
+            }
+        }
+        
+        // Fallback to direct library handling for formats WordPress doesn't support
+        return $this->convert_with_direct_library($src, $dest, $target_format, $options);
+    }
+    
+    /**
+     * Direct library conversion for advanced formats
+     */
+    private function convert_with_direct_library($src, $dest, $target_format, $options = []) {
+        $format_info = self::SUPPORTED_TARGET_FORMATS[$target_format];
+        $quality = $options['quality'] ?? $format_info['default_quality'];
+        
+        switch ($target_format) {
+            case 'webp':
+                return $this->convert_webp_direct($src, $dest, $quality);
+            
+            case 'avif':
+                $speed = $options['speed'] ?? ($this->settings['avif_speed'] ?? 6);
+                return $this->convert_avif_direct($src, $dest, $quality, $speed);
+                
+            case 'jxl':
+                $effort = $options['effort'] ?? ($this->settings['jxl_effort'] ?? 7);
+                return $this->convert_jxl_direct($src, $dest, $quality, $effort);
+                
+            default:
+                return false;
+        }
+    }
+    
+    private function convert_webp_direct($src, $dest, $quality) {
+        // GD WebP conversion
+        if (function_exists('imagewebp')) {
+            $image = $this->load_image_gd($src);
+            if ($image) {
+                $result = imagewebp($image, $dest, $quality);
+                imagedestroy($image);
+                return $result;
+            }
+        }
+        
+        // Imagick WebP conversion
+        if (class_exists('Imagick')) {
+            try {
+                $imagick = new Imagick($src);
+                $imagick->setImageFormat('webp');
+                $imagick->setImageCompressionQuality($quality);
+                return $imagick->writeImage($dest);
+            } catch (Exception $e) {
+                return false;
+            }
+        }
+        
+        return false;
+    }
+    
+    private function convert_avif_direct($src, $dest, $quality, $speed) {
+        // GD AVIF conversion (PHP 8.1+)
+        if (function_exists('imageavif')) {
+            $image = $this->load_image_gd($src);
+            if ($image) {
+                $result = imageavif($image, $dest, $quality, $speed);
+                imagedestroy($image);
+                return $result;
+            }
+        }
+        
+        // Imagick AVIF conversion
+        if (class_exists('Imagick')) {
+            try {
+                $imagick = new Imagick($src);
+                $imagick->setImageFormat('avif');
+                $imagick->setImageCompressionQuality($quality);
+                // AVIF-specific options
+                $imagick->setOption('avif:compression-speed', $speed);
+                return $imagick->writeImage($dest);
+            } catch (Exception $e) {
+                return false;
+            }
+        }
+        
+        return false;
+    }
+    
+    private function convert_jxl_direct($src, $dest, $quality, $effort) {
+        // JPEG XL via Imagick (if supported)
+        if (class_exists('Imagick')) {
+            try {
+                $imagick = new Imagick($src);
+                $imagick->setImageFormat('jxl');
+                $imagick->setImageCompressionQuality($quality);
+                $imagick->setOption('jxl:effort', $effort);
+                return $imagick->writeImage($dest);
+            } catch (Exception $e) {
+                return false;
+            }
+        }
+        
+        return false;
+    }
+    
+    private function load_image_gd($src) {
+        $info = getimagesize($src);
+        if (!$info) return false;
+        
+        switch ($info['mime']) {
+            case 'image/jpeg':
+                return imagecreatefromjpeg($src);
+            case 'image/png':
+                return imagecreatefrompng($src);
+            case 'image/gif':
+                return imagecreatefromgif($src);
+            default:
+                return false;
+        }
     }
 
     private function build_url_map($uploads, $old_meta, $new_meta) {
@@ -598,10 +901,14 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 = trailingslashit($uploads['basedir']).$new_dir_rel.$n['file'];
         }
 
-        // Extension swap helpers
+        // Extension swap helpers - now supports multiple target formats
+        $target_format = $this->settings['target_format'] ?? 'webp';
+        $target_ext = self::SUPPORTED_TARGET_FORMATS[$target_format]['ext'] ?? 'webp';
         $exts = ['jpg','jpeg','png','gif'];
         foreach ($exts as $ext) {
-            $map_ext = function($url){ return preg_replace('/\.(jpg|jpeg|png|gif)\b/i', '.webp', $url); };
+            $map_ext = function($url) use ($target_ext) { 
+                return preg_replace('/\.(jpg|jpeg|png|gif)\b/i', '.' . $target_ext, $url); 
+            };
             foreach (array_keys($map) as $k) {
                 $map[$map_ext($k)] = $map[$k];
             }
@@ -900,7 +1207,8 @@ $GLOBALS['webp_safe_migrator'] = new WebP_Safe_Migrator();
  *
  * Usage examples:
  *   wp webp-migrator run --batch=100 --no-validate
- *   wp webp-migrator run --batch=25
+ *   wp webp-migrator run --batch=25 --format=avif --quality=60
+ *   wp webp-migrator run --format=jxl --quality=80 --effort=8
  */
 if (defined('WP_CLI') && WP_CLI) {
     class WebP_Safe_Migrator_CLI {
@@ -915,14 +1223,43 @@ if (defined('WP_CLI') && WP_CLI) {
             if (!$plugin) WP_CLI::error('Plugin not loaded.');
 
             $settings = get_option(WebP_Safe_Migrator::OPTION, []);
-            $quality   = isset($settings['quality']) ? (int)$settings['quality'] : 59;
-            $batch     = isset($assoc_args['batch']) ? max(1, (int)$assoc_args['batch']) : (int)($settings['batch_size'] ?? 10);
+            
+            // Format selection with CLI override
+            $target_format = isset($assoc_args['format']) ? $assoc_args['format'] : ($settings['target_format'] ?? 'webp');
+            if (!array_key_exists($target_format, WebP_Safe_Migrator::SUPPORTED_TARGET_FORMATS)) {
+                WP_CLI::error("Unsupported format: $target_format. Supported: " . implode(', ', array_keys(WebP_Safe_Migrator::SUPPORTED_TARGET_FORMATS)));
+            }
+            
+            // Quality with CLI override and format-specific defaults
+            $format_info = WebP_Safe_Migrator::SUPPORTED_TARGET_FORMATS[$target_format];
+            $default_quality = $settings[$target_format . '_quality'] ?? $format_info['default_quality'];
+            $quality = isset($assoc_args['quality']) ? max(1, min(100, (int)$assoc_args['quality'])) : $default_quality;
+            
+            // Additional format-specific options
+            $format_options = [];
+            if ($target_format === 'avif') {
+                $format_options['speed'] = isset($assoc_args['speed']) ? max(0, min(10, (int)$assoc_args['speed'])) : ($settings['avif_speed'] ?? 6);
+            } elseif ($target_format === 'jxl') {
+                $format_options['effort'] = isset($assoc_args['effort']) ? max(1, min(9, (int)$assoc_args['effort'])) : ($settings['jxl_effort'] ?? 7);
+            }
+            
+            $batch = isset($assoc_args['batch']) ? max(1, (int)$assoc_args['batch']) : (int)($settings['batch_size'] ?? 10);
             $no_validate = array_key_exists('no-validate', $assoc_args);
             $validate = !$no_validate;
 
+            // Override plugin target format for this run
+            $original_format = $settings['target_format'] ?? 'webp';
+            $plugin->settings['target_format'] = $target_format;
+            $plugin->settings['quality'] = $quality;
+            
+            // Apply format-specific settings
+            foreach ($format_options as $key => $value) {
+                $plugin->settings[$target_format . '_' . $key] = $value;
+            }
+
             $plugin->set_runtime_validation($validate);
 
-            $ids = $plugin->get_non_webp_attachments($batch);
+            $ids = $plugin->get_non_target_format_attachments($batch);
             if (!$ids) {
                 WP_CLI::success('No eligible attachments found (maybe all converted or skipped by filters).');
                 return;
@@ -934,7 +1271,15 @@ if (defined('WP_CLI') && WP_CLI) {
                 $processed += $ok ? 1 : 0;
                 WP_CLI::log(($ok ? 'OK   ' : 'SKIP')." #$id");
             }
-            WP_CLI::success("Processed {$processed}/".count($ids)." attachments. Validation mode: ".($validate ? 'ON' : 'OFF'));
+            // Restore original format setting
+            $plugin->settings['target_format'] = $original_format;
+            
+            $format_details = '';
+            if (!empty($format_options)) {
+                $format_details = ' (' . implode(', ', array_map(function($k, $v) { return "$k=$v"; }, array_keys($format_options), $format_options)) . ')';
+            }
+            
+            WP_CLI::success("Processed {$processed}/".count($ids)." attachments to " . strtoupper($target_format) . " format (Quality: {$quality}{$format_details}). Validation: ".($validate ? 'ON' : 'OFF'));
         }
     }
 }
