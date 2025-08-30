@@ -168,22 +168,37 @@ podman logs webp-migrator-wordpress --tail=20 2>/dev/null || echo -e "${YELLOW}!
 
 echo ""
 echo -e "${CYAN}[DIAGNOSTIC]${NC} Testing database connectivity from WordPress container..."
+echo "* Checking if MySQL client is available in WordPress container..."
+if ! podman exec webp-migrator-wordpress which mysql >/dev/null 2>&1; then
+    echo -e "${YELLOW}! MySQL client not found in WordPress container - installing...${NC}"
+    podman exec webp-migrator-wordpress apt-get update >/dev/null 2>&1
+    podman exec webp-migrator-wordpress apt-get install -y default-mysql-client >/dev/null 2>&1
+    echo -e "${GREEN}* MySQL client installed${NC}"
+fi
+
+echo "* Testing database connection..."
 if podman exec webp-migrator-wordpress mysql -h webp-migrator-mysql -u wordpress -pwordpress123 -e "SELECT 'Database connection: OK';" 2>/dev/null; then
     echo -e "${GREEN}* Database connection successful${NC}"
 else
-    echo -e "${RED}! Database connection failed${NC}"
+    echo -e "${RED}! Database connection failed - checking database container...${NC}"
+    podman ps --filter "name=webp-migrator-mysql" --format "table {{.Names}}\t{{.Status}}"
+    echo "! Trying direct database connection test..."
+    if ! podman exec webp-migrator-mysql mysql -u wordpress -pwordpress123 -e "SELECT 'Direct DB connection: OK';" 2>/dev/null; then
+        echo -e "${RED}! Direct database connection also failed${NC}"
+    fi
 fi
 
 echo ""
 echo -e "${CYAN}[CONNECTION TEST]${NC} Testing WordPress response..."
-for i in {1..10}; do
-    echo "* Attempt $i/10: Testing http://localhost:8080"
+echo "* Note: HTTP 302 redirects are normal during WordPress setup"
+for i in {1..5}; do
+    echo "* Attempt $i/5: Testing http://localhost:8080"
     
     # Get detailed response information
     response=$(curl -s -o /dev/null -w "HTTP_CODE:%{http_code} TIME:%{time_total}s SIZE:%{size_download}bytes" "http://localhost:8080" 2>/dev/null)
     echo "  Response: $response"
     
-    if echo "$response" | grep -q "HTTP_CODE:200\|HTTP_CODE:30"; then
+    if echo "$response" | grep -q "HTTP_CODE:200\|HTTP_CODE:301\|HTTP_CODE:302\|HTTP_CODE:303"; then
         echo -e "${GREEN}* SUCCESS: WordPress is responding! $response${NC}"
         break
     fi
@@ -191,19 +206,23 @@ for i in {1..10}; do
     # Show what HTTP code we got
     http_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080" 2>/dev/null)
     if [[ "$http_code" != "000" ]]; then
-        echo -e "${YELLOW}  Got HTTP $http_code instead of 200/30x${NC}"
+        if [[ "$http_code" == "302" ]]; then
+            echo -e "${CYAN}  HTTP 302: WordPress is redirecting (likely to setup page)${NC}"
+        else
+            echo -e "${YELLOW}  Got HTTP $http_code - unexpected response${NC}"
+        fi
     else
         echo -e "${RED}  Connection refused or timeout${NC}"
     fi
     
-    if [[ $i -lt 10 ]]; then
+    if [[ $i -lt 5 ]]; then
         echo "  Waiting 10 seconds before retry..."
         sleep 10
     fi
 done
 
 echo ""
-echo -e "${CYAN}[FINAL DIAGNOSTIC]${NC} After 10 attempts, showing detailed status:"
+echo -e "${CYAN}[FINAL DIAGNOSTIC]${NC} After 5 attempts, showing detailed status:"
 if ! podman exec webp-migrator-wordpress ps aux | grep -q apache; then
     echo -e "${RED}! Apache processes not found in container${NC}"
 else

@@ -151,12 +151,31 @@ podman logs webp-migrator-wordpress --tail=20 2>nul || echo ! Could not retrieve
 
 echo.
 echo [DIAGNOSTIC] Testing database connectivity from WordPress container...
-podman exec webp-migrator-wordpress mysql -h webp-migrator-mysql -u wordpress -pwordpress123 -e "SELECT 'Database connection: OK';" 2>nul || echo ! Database connection failed
+echo * Checking if MySQL client is available in WordPress container...
+podman exec webp-migrator-wordpress which mysql >nul 2>&1
+if errorlevel 1 (
+    echo ! MySQL client not found in WordPress container - installing...
+    podman exec webp-migrator-wordpress apt-get update >nul 2>&1
+    podman exec webp-migrator-wordpress apt-get install -y default-mysql-client >nul 2>&1
+    echo * MySQL client installed
+)
+
+echo * Testing database connection...
+podman exec webp-migrator-wordpress mysql -h webp-migrator-mysql -u wordpress -pwordpress123 -e "SELECT 'Database connection: OK';" 2>nul
+if errorlevel 1 (
+    echo ! Database connection failed - checking database container...
+    podman ps --filter "name=webp-migrator-mysql" --format "table {{.Names}}\t{{.Status}}"
+    echo ! Trying direct database connection test...
+    podman exec webp-migrator-mysql mysql -u wordpress -pwordpress123 -e "SELECT 'Direct DB connection: OK';" 2>nul || echo ! Direct database connection also failed
+) else (
+    echo * Database connection successful
+)
 
 echo.
 echo [CONNECTION TEST] Testing WordPress response...
-for /l %%i in (1,1,10) do (
-    echo * Attempt %%i/10: Testing %WP_SITE_URL%
+echo * Note: HTTP 302 redirects are normal during WordPress setup
+for /l %%i in (1,1,5) do (
+    echo * Attempt %%i/5: Testing %WP_SITE_URL%
     
     REM Get detailed response information
     for /f "tokens=*" %%a in ('curl -s -o nul -w "HTTP_CODE:%%{http_code} TIME:%%{time_total}s SIZE:%%{size_download}bytes" "%WP_SITE_URL%" 2^>nul') do (
@@ -171,23 +190,27 @@ for /l %%i in (1,1,10) do (
     REM If response was not 200/30x, show what we got
     for /f "tokens=*" %%b in ('curl -s -w "%%{http_code}" "%WP_SITE_URL%" 2^>nul') do (
         if not "%%b"=="000" (
-            echo   Got HTTP %%b instead of 200/30x
+            if "%%b"=="302" (
+                echo   HTTP 302: WordPress is redirecting (likely to setup page^)
+            ) else (
+                echo   Got HTTP %%b - unexpected response
+            )
         ) else (
             echo   Connection refused or timeout
         )
     )
     
-    if %%i lss 10 (
+    if %%i lss 5 (
         echo   Waiting 10 seconds before retry...
         timeout /t 10 /nobreak >nul
     )
 )
 
 echo.
-echo [FINAL DIAGNOSTIC] After 10 failed attempts, showing detailed status:
+echo [FINAL DIAGNOSTIC] After 5 attempts, showing detailed status:
 podman exec webp-migrator-wordpress ps aux | findstr apache 2>nul || echo ! Apache processes not found
 podman exec webp-migrator-wordpress ls -la /var/www/html/ | head -5 2>nul || echo ! WordPress files not accessible
-echo ! WARNING: WordPress failed to respond after 10 attempts - proceeding with installation anyway
+echo ! WARNING: WordPress failed to respond after 5 attempts - proceeding with installation anyway
 
 :wordpress_ready
 echo * WordPress connection testing completed
