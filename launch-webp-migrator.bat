@@ -56,6 +56,8 @@ echo Creating container network...
 podman network create webp-migrator-net
 if errorlevel 1 (
     echo ERROR: Failed to create network
+    echo.
+    echo Press any key to copy this error output, then press a key to exit...
     pause
     exit /b 1
 )
@@ -72,6 +74,9 @@ podman run -d --name webp-migrator-mysql --network webp-migrator-net -p %DB_PORT
 
 if errorlevel 1 (
     echo ERROR: Failed to start MySQL
+    echo Check the above output for MySQL container startup errors
+    echo.
+    echo Press any key to copy this error output, then press a key to exit...
     pause
     exit /b 1
 )
@@ -90,6 +95,10 @@ if errorlevel 1 (
             if errorlevel 1 (
             echo ERROR: MySQL not ready after extended wait
             echo You can check MySQL logs with: podman logs webp-migrator-mysql
+            echo.
+            podman logs webp-migrator-mysql --tail=10
+            echo.
+            echo Press any key to copy this MySQL error output, then press a key to exit...
             pause
             exit /b 1
         )
@@ -106,6 +115,10 @@ podman run -d --name webp-migrator-wordpress --network webp-migrator-net -p %WP_
 
 if errorlevel 1 (
     echo ERROR: Failed to start WordPress
+    echo Check the above output for WordPress container startup errors
+    echo Common issues: Port 8080 already in use, Docker/Podman not running
+    echo.
+    echo Press any key to copy this error output, then press a key to exit...
     pause
     exit /b 1
 )
@@ -120,6 +133,10 @@ podman run -d --name webp-migrator-phpmyadmin --network webp-migrator-net -p %PM
 
 if errorlevel 1 (
     echo ERROR: Failed to start phpMyAdmin
+    echo Check the above output for phpMyAdmin container startup errors
+    echo Common issues: Port 8081 already in use, network connectivity
+    echo.
+    echo Press any key to copy this error output, then press a key to exit...
     pause
     exit /b 1
 )
@@ -169,7 +186,23 @@ if errorlevel 1 (
     echo ! Database connection failed - checking database container...
     podman ps --filter "name=webp-migrator-mysql" --format "table {{.Names}}\t{{.Status}}"
     echo ! Trying direct database connection test...
-    podman exec webp-migrator-mysql mysql -u wordpress -pwordpress123 -e "SELECT 'Direct DB connection: OK';" 2>nul || echo ! Direct database connection also failed
+    podman exec webp-migrator-mysql mysql -u wordpress -pwordpress123 -e "SELECT 'Direct DB connection: OK';" 2>nul
+    if errorlevel 1 (
+        echo ! Direct database connection also failed
+        echo.
+        echo CRITICAL: Database connectivity completely broken!
+        echo This will prevent WordPress from working. Check:
+        echo   1. MySQL container status: podman ps
+        echo   2. MySQL container logs: podman logs webp-migrator-mysql  
+        echo   3. Network connectivity between containers
+        echo.
+        echo Press any key to copy this database error output and fix the issue...
+        pause
+        echo Continuing anyway, but WordPress installation will likely fail...
+        echo.
+    ) else (
+        echo * Direct database connection successful
+    )
 ) else (
     echo * Database connection successful
 )
@@ -216,7 +249,20 @@ echo.
 echo [FINAL DIAGNOSTIC] After 5 attempts, showing detailed status:
 podman exec webp-migrator-wordpress ps aux | findstr apache 2>nul || echo ! Apache processes not found
 podman exec webp-migrator-wordpress ls -la /var/www/html/ | head -5 2>nul || echo ! WordPress files not accessible
+echo.
 echo ! WARNING: WordPress failed to respond after 5 attempts - proceeding with installation anyway
+echo ! If you want to debug this, you can:
+echo   1. Check container logs: podman logs webp-migrator-wordpress
+echo   2. Check database connectivity from above diagnostics
+echo   3. Try accessing http://localhost:%WP_PORT% manually in browser
+echo.
+echo Press any key to copy this diagnostic output, or press Enter to continue...
+choice /c YN /n /m "Continue anyway? (Y/N): "
+if errorlevel 2 (
+    echo Installation cancelled by user
+    pause
+    exit /b 1
+)
 
 :wordpress_ready
 echo * WordPress connection testing completed
@@ -270,6 +316,14 @@ if errorlevel 1 (
     echo ! WordPress installation had issues - you may need to complete setup manually
     echo   Go to %WP_SITE_URL% to finish WordPress setup
     echo   Expected credentials: %WP_ADMIN_USER% / %WP_ADMIN_PASS%
+    echo.
+    echo WordPress installation failed. You can:
+    echo   1. Try accessing %WP_SITE_URL% in browser to complete setup manually
+    echo   2. Check WordPress container logs: podman logs webp-migrator-wordpress
+    echo   3. Check if database connection is working from diagnostics above
+    echo.
+    echo Press any key to copy this error output, or Enter to continue anyway...
+    pause >nul
 ) else (
     echo * WordPress installed successfully!
 )
@@ -289,6 +343,14 @@ podman exec webp-migrator-wordpress wp plugin activate webp-safe-migrator --allo
 if errorlevel 1 (
     echo ! Plugin activation failed - you can activate it manually in WordPress admin
     echo   Go to Plugins → Installed Plugins and activate WebP Safe Migrator
+    echo.
+    echo Plugin activation error details above. Common issues:
+    echo   1. Plugin syntax errors or PHP compatibility issues
+    echo   2. WordPress not fully installed yet
+    echo   3. Database connection problems
+    echo.
+    echo Press any key to copy this plugin error output, or Enter to continue...
+    pause >nul
 ) else (
     echo * Plugin activated successfully!
 )
@@ -335,7 +397,9 @@ echo Opening WordPress Admin Panel in browser...
 start %WP_SITE_URL%/wp-admin
 
 echo.
-echo SUCCESS! WordPress with WebP Safe Migrator is ready!
+echo =====================================
+echo   🎉 SUCCESS! SETUP COMPLETE! 🎉
+echo =====================================
 echo.
 echo IMPORTANT: Your credentials are configurable!
 echo Edit 'webp-migrator.env' to customize usernames/passwords
@@ -347,5 +411,18 @@ echo   stop-webp-migrator.bat          - Stop containers (keep data)
 echo   cleanup-webp-migrator.bat       - Complete cleanup (removes all data)
 echo   status-webp-migrator.bat        - Show status
 echo   manage-wp.bat                   - WordPress management commands
+echo.
+echo ✅ Installation completed successfully!
+echo 
+echo SAVE THESE DETAILS - Press any key to copy this information:
+pause >nul
+echo.
+echo 📋 Copy this information for your records:
+echo ==========================================
+echo WordPress Site: %WP_SITE_URL%
+echo WordPress Admin: %WP_SITE_URL%/wp-admin
+echo Username: %WP_ADMIN_USER%
+echo Password: %WP_ADMIN_PASS%
+echo ==========================================
 echo.
 echo Script completed successfully!
