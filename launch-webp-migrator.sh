@@ -154,6 +154,13 @@ echo -e "${GREEN}✓ WordPress should be accessible now${NC}"
 
 echo ""
 
+# Configure PHP for optimal WebP processing
+echo "Configuring PHP upload limits..."
+podman exec webp-migrator-wordpress bash -c "echo 'upload_max_filesize = 128M' > /usr/local/etc/php/conf.d/webp-migrator.ini && echo 'post_max_size = 128M' >> /usr/local/etc/php/conf.d/webp-migrator.ini && echo 'max_execution_time = 300' >> /usr/local/etc/php/conf.d/webp-migrator.ini && echo 'memory_limit = 512M' >> /usr/local/etc/php/conf.d/webp-migrator.ini"
+
+echo "Restarting Apache to apply PHP configuration..."
+podman exec webp-migrator-wordpress apache2ctl graceful 2>/dev/null
+
 # Install WP-CLI in WordPress container
 echo "Installing WP-CLI in WordPress container..."
 podman exec webp-migrator-wordpress bash -c "curl -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp" 2>/dev/null
