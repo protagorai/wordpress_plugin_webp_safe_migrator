@@ -134,5 +134,6 @@ echo launch-webp-migrator.bat   - Start/restart the environment
 echo stop-webp-migrator.bat     - Stop containers (keep data)
 echo cleanup-webp-migrator.bat  - Complete cleanup (removes all data)
 echo status-webp-migrator.bat   - Show this status (current script)
+echo manage-wp.bat              - WordPress management commands
 echo.
 echo Status check completed!

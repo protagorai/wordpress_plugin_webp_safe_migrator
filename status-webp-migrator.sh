@@ -72,6 +72,24 @@ fi
 
 echo ""
 
+# Check WordPress Plugin Status
+echo "WordPress Plugin Status:"
+echo "------------------------"
+echo "Checking active plugins..."
+if podman exec webp-migrator-wpcli wp plugin list --status=active --format=table --allow-root 2>/dev/null; then
+    echo ""
+    echo "WebP Safe Migrator status:"
+    if podman exec webp-migrator-wpcli wp plugin status webp-safe-migrator --allow-root 2>/dev/null; then
+        echo -e "${GREEN}✓ WebP Safe Migrator is active and working${NC}"
+    else
+        echo -e "${RED}❌ WebP Safe Migrator not found or inactive${NC}"
+    fi
+else
+    echo -e "${YELLOW}! WP-CLI not available or WordPress not ready${NC}"
+fi
+
+echo ""
+
 # Check service accessibility
 echo "Service Accessibility:"
 echo "----------------------"
@@ -134,6 +152,7 @@ echo "./launch-webp-migrator.sh   - Start/restart the environment"
 echo "./stop-webp-migrator.sh     - Stop containers (keep data)"
 echo "./cleanup-webp-migrator.sh  - Complete cleanup (removes all data)"
 echo "./status-webp-migrator.sh   - Show this status (current script)"
+echo "./manage-wp.sh              - WordPress management commands"
 echo ""
 
 echo -e "${GREEN}Status check completed!${NC}"
