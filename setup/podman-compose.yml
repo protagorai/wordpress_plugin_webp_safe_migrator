@@ -34,7 +34,6 @@ services:
     volumes:
       - wordpress_data:/var/www/html
       - ../src:/var/www/html/wp-content/plugins/webp-safe-migrator:Z
-      - ./uploads:/var/www/html/wp-content/uploads:Z
       - ./ssl-certs:/etc/ssl/certs/webp-migrator:Z
       - ./logs:/var/log/webp-migrator:Z
     depends_on:

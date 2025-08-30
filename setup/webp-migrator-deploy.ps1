@@ -178,7 +178,6 @@ function Start-WordPressContainer {
         -e WORDPRESS_DEBUG=1 `
         -e "WORDPRESS_CONFIG_EXTRA=define('WP_DEBUG_LOG', true); define('WP_DEBUG_DISPLAY', false); define('SCRIPT_DEBUG', true); define('WP_MEMORY_LIMIT', '512M'); define('FS_METHOD', 'direct');" `
         -v "${pluginSourcePath}:/var/www/html/wp-content/plugins/webp-safe-migrator" `
-        -v "${InstallPath}\uploads:/var/www/html/wp-content/uploads" `
         docker.io/library/wordpress:latest
     
     if ($LASTEXITCODE -eq 0) {

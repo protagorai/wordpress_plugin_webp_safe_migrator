@@ -106,9 +106,28 @@ setup_letsencrypt() {
     log_success "Let's Encrypt directory structure ready"
 }
 
+# Initialize WordPress directories with proper ownership
+initialize_wordpress_directories() {
+    log_info "Initializing WordPress directories..."
+    
+    # Create uploads directory with correct ownership from the start
+    # (No longer needed since we removed the problematic volume mount)
+    if [[ ! -d "/var/www/html/wp-content/uploads" ]]; then
+        mkdir -p /var/www/html/wp-content/uploads
+        chown www-data:www-data /var/www/html/wp-content/uploads
+        chmod 755 /var/www/html/wp-content/uploads
+        log_info "Created uploads directory with www-data ownership"
+    fi
+    
+    log_success "WordPress directories initialized"
+}
+
 # Main SSL setup function
 setup_ssl() {
     log_info "Starting SSL setup for WebP Safe Migrator..."
+    
+    # Initialize WordPress directories with proper ownership
+    initialize_wordpress_directories
     
     # Check if SSL is enabled via environment variable
     if [[ "${ENABLE_SSL:-true}" == "true" ]]; then

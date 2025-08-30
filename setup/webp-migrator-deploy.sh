@@ -243,7 +243,6 @@ start_wordpress_container() {
         -e WORDPRESS_DEBUG=1 \
         -e "WORDPRESS_CONFIG_EXTRA=define('WP_DEBUG_LOG', true); define('WP_DEBUG_DISPLAY', false); define('SCRIPT_DEBUG', true); define('WP_MEMORY_LIMIT', '512M'); define('FS_METHOD', 'direct');" \
         -v "$plugin_source_path:/var/www/html/wp-content/plugins/webp-safe-migrator" \
-        -v "$INSTALL_PATH/uploads:/var/www/html/wp-content/uploads" \
         --restart unless-stopped \
         docker.io/library/wordpress:latest
     
