@@ -25,11 +25,11 @@ echo.
 
 REM Stop all containers
 echo Stopping all containers...
-podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin webp-migrator-wpcli 2>nul
+podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin 2>nul
 
 REM Remove all containers
 echo Removing all containers...
-podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin webp-migrator-wpcli 2>nul
+podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin 2>nul
 if not errorlevel 1 (
     echo ✓ Containers removed
 ) else (

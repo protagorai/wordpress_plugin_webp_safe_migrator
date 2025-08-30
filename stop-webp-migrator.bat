@@ -22,14 +22,6 @@ if not errorlevel 1 (
     echo ! WordPress was not running
 )
 
-echo Stopping WP-CLI container...
-podman stop webp-migrator-wpcli 2>nul
-if not errorlevel 1 (
-    echo ✓ WP-CLI stopped
-) else (
-    echo ! WP-CLI was not running
-)
-
 echo Stopping phpMyAdmin container...
 podman stop webp-migrator-phpmyadmin 2>nul
 if not errorlevel 1 (

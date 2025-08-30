@@ -28,13 +28,6 @@ else
     echo -e "${YELLOW}! WordPress was not running${NC}"
 fi
 
-echo "Stopping WP-CLI container..."
-if podman stop webp-migrator-wpcli 2>/dev/null; then
-    echo -e "${GREEN}✓ WP-CLI stopped${NC}"
-else
-    echo -e "${YELLOW}! WP-CLI was not running${NC}"
-fi
-
 echo "Stopping phpMyAdmin container..."
 if podman stop webp-migrator-phpmyadmin 2>/dev/null; then
     echo -e "${GREEN}✓ phpMyAdmin stopped${NC}"

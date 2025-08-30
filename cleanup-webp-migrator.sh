@@ -31,11 +31,11 @@ echo ""
 
 # Stop all containers
 echo "Stopping all containers..."
-podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin webp-migrator-wpcli 2>/dev/null || true
+podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin 2>/dev/null || true
 
 # Remove all containers
 echo "Removing all containers..."
-if podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin webp-migrator-wpcli 2>/dev/null; then
+if podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin 2>/dev/null; then
     echo -e "${GREEN}✓ Containers removed${NC}"
 else
     echo -e "${YELLOW}! Some containers may not have existed${NC}"
