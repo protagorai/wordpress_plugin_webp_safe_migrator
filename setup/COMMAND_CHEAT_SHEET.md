@@ -3,13 +3,13 @@
 Quick reference for the most frequently used commands across all platforms.
 
 ## 📋 Table of Contents
-- [🚀 Launch](#-launch-commands)
-- [🛑 Shutdown](#-shutdown-commands) 
-- [🧹 Cleanup](#-cleanup-commands)
+- [🚀 Launch](#-launch)
+- [🛑 Shutdown](#-shutdown) 
+- [🧹 Cleanup](#-cleanup)
 - [📊 Status & Monitoring](#-status--monitoring)
-- [🔧 Development](#-development-commands)
+- [🔧 Development](#-development)
 - [⚙️ Configuration](#-configuration-management)
-- [🆘 Emergency](#-emergency-commands)
+- [🆘 Emergency](#-emergency)
 
 ---
 

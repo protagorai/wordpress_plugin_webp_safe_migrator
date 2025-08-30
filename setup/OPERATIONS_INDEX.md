@@ -11,15 +11,15 @@
 - **[📖 Learn all available commands](COMMAND_CHEAT_SHEET.md)** → Complete command reference
 
 ### **Daily Operations**
-- **[▶️ Start the development environment](COMMAND_CHEAT_SHEET.md#-launch-commands)** → `./setup/podman-setup.sh up`
+- **[▶️ Start the development environment](COMMAND_CHEAT_SHEET.md#-launch)** → `./setup/podman-setup.sh up`
 - **[⏹️ Stop the development environment](GRACEFUL_SHUTDOWN.md#-container-environment-shutdown)** → `./setup/podman-setup.sh down`  
 - **[📊 Check what's running](COMMAND_CHEAT_SHEET.md#-status--monitoring)** → `./setup/podman-setup.sh status`
 - **[🔍 View logs](COMMAND_CHEAT_SHEET.md#log-monitoring)** → `./setup/docker-setup.sh logs --follow`
 
 ### **Plugin Development**
-- **[🔧 Update plugin after code changes](COMMAND_CHEAT_SHEET.md#plugin-development)** → `./setup/plugin-manager.sh update`
-- **[💾 Backup plugin before changes](COMMAND_CHEAT_SHEET.md#plugin-development)** → `./setup/plugin-manager.sh backup`
-- **[📋 Check plugin status](COMMAND_CHEAT_SHEET.md#plugin-development)** → `./setup/plugin-manager.sh status`
+- **[🔧 Update plugin after code changes](COMMAND_CHEAT_SHEET.md#-development)** → `./setup/plugin-manager.sh update`
+- **[💾 Backup plugin before changes](COMMAND_CHEAT_SHEET.md#-development)** → `./setup/plugin-manager.sh backup`
+- **[📋 Check plugin status](COMMAND_CHEAT_SHEET.md#-development)** → `./setup/plugin-manager.sh status`
 
 ### **Cleanup & Reset**
 - **[🧹 Clean up everything](GRACEFUL_SHUTDOWN.md#-complete-cleanup)** → `./setup/podman-setup.sh clean`
@@ -35,7 +35,7 @@
 ### **Troubleshooting**
 - **[❓ Common issues](QUICK_START.md#-troubleshooting)** → Port conflicts, container issues
 - **[🔧 Shutdown problems](GRACEFUL_SHUTDOWN.md#-shutdown-troubleshooting)** → Won't stop, port still in use
-- **[🚨 Emergency procedures](COMMAND_CHEAT_SHEET.md#-emergency-commands)** → Force stop, recovery
+- **[🚨 Emergency procedures](COMMAND_CHEAT_SHEET.md#-emergency)** → Force stop, recovery
 
 ---
 
@@ -120,7 +120,7 @@ After setup, access your development environment:
 1. **[Clone/download project](../README.md)**
 2. **[Copy config template](README-CONFIG-SYSTEM.md#-quick-start)**: `cp setup/simple-config.yaml my-config.yaml`
 3. **Edit my-config.yaml**: Change usernames, passwords, domains, ports
-4. **[Generate setup](README-CONFIG-SYSTEM.md#-generate-configuration-files)**: `./setup/generate-config.sh my-config.yaml`
+4. **[Generate setup](README-CONFIG-SYSTEM.md#3-generate-configuration-files)**: `./setup/generate-config.sh my-config.yaml`
 5. **Deploy**: `cd setup/generated/ && docker-compose up -d`
 6. **[Open your custom WordPress URL](http://localhost:8080/?auto_login=dev_mode)**
 
@@ -133,7 +133,7 @@ After setup, access your development environment:
 6. **Stop when done**: `./setup/podman-setup.sh down`
 
 ### **End of Project**
-1. **[Backup important data](COMMAND_CHEAT_SHEET.md#development-commands)**: `./setup/plugin-manager.sh backup`
+1. **[Backup important data](COMMAND_CHEAT_SHEET.md#-development)**: `./setup/plugin-manager.sh backup`
 2. **[Complete cleanup](GRACEFUL_SHUTDOWN.md#-container-environment-shutdown)**: `./setup/podman-setup.sh clean`
 3. **Verify cleanup**: `podman ps` (should be empty)
 
