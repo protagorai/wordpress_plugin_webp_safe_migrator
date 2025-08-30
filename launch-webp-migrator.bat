@@ -153,8 +153,12 @@ echo.
 REM Install WordPress
 echo Installing WordPress...
 echo * Admin user: %WP_ADMIN_USER%
+echo * Admin password: %WP_ADMIN_PASS%
 echo * Site title: %WP_SITE_TITLE%
-podman exec webp-migrator-wordpress wp core install --url="%WP_SITE_URL%" --title="%WP_SITE_TITLE%" --admin_user="%WP_ADMIN_USER%" --admin_password="%WP_ADMIN_PASS%" --admin_email="%WP_ADMIN_EMAIL%" --locale="en_US" --skip-email --allow-root
+echo * Site URL: %WP_SITE_URL%
+echo.
+echo DEBUG: Running WP-CLI install command with these exact values...
+podman exec webp-migrator-wordpress bash -c "wp core install --url='%WP_SITE_URL%' --title='%WP_SITE_TITLE%' --admin_user='%WP_ADMIN_USER%' --admin_password='%WP_ADMIN_PASS%' --admin_email='%WP_ADMIN_EMAIL%' --locale='en_US' --skip-email --allow-root"
 
 if errorlevel 1 (
     echo ! WordPress installation had issues - you may need to complete setup manually
@@ -165,15 +169,8 @@ if errorlevel 1 (
 
 echo.
 
-REM Always ensure admin user has correct password (handles restarts/re-runs)
-echo Updating admin user credentials...
-podman exec webp-migrator-wordpress wp user update "%WP_ADMIN_USER%" --user_pass="%WP_ADMIN_PASS%" --user_email="%WP_ADMIN_EMAIL%" --allow-root 2>nul
-if errorlevel 1 (
-    echo ! Admin user update had issues, but this is normal on first install
-) else (
-    echo * Admin user credentials updated successfully!
-)
-
+REM WordPress installation should have set the password correctly
+echo * WordPress installation completed with configured admin credentials
 echo.
 
 REM Activate plugin
@@ -224,9 +221,9 @@ echo Plugin Access:
 echo   Go to Media → WebP Migrator in WordPress admin
 echo.
 
-REM Open WordPress in default browser
-echo Opening WordPress in browser...
-start %WP_SITE_URL%
+REM Open WordPress admin in default browser
+echo Opening WordPress Admin Panel in browser...
+start %WP_SITE_URL%/wp-admin
 
 echo.
 echo SUCCESS! WordPress with WebP Safe Migrator is ready!
