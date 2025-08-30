@@ -1,13 +1,13 @@
 @echo off
 setlocal enabledelayedexpansion
 REM ==============================================================================
-REM WebP Safe Migrator - Windows Launcher v2
-REM Fixed WordPress installation process
+REM WebP Safe Migrator - Windows Launcher v3 (Configurable)
+REM Uses webp-migrator.config.yaml for customizable credentials and settings
 REM ==============================================================================
 
 echo.
 echo =====================================
-echo   WebP Safe Migrator Launcher v2
+echo   WebP Safe Migrator Launcher v3
 echo =====================================
 echo.
 
@@ -19,6 +19,10 @@ if not exist "src\webp-safe-migrator.php" (
     pause
     exit /b 1
 )
+
+REM Load configuration from .env file
+echo Loading configuration...
+call load-config.bat
 
 REM Check if Podman is available
 echo Checking Podman...
@@ -58,7 +62,10 @@ echo.
 
 REM Start MySQL
 echo Starting MySQL database...
-podman run -d --name webp-migrator-mysql --network webp-migrator-net -p 3307:3306 -e MYSQL_DATABASE=wordpress_webp_test -e MYSQL_USER=wordpress -e MYSQL_PASSWORD=wordpress123 -e MYSQL_ROOT_PASSWORD=root123 docker.io/library/mysql:8.0 --default-authentication-plugin=mysql_native_password
+echo * Database: %DB_NAME%
+echo * WordPress user: %DB_WP_USER%
+echo * Port: %DB_PORT%
+podman run -d --name webp-migrator-mysql --network webp-migrator-net -p %DB_PORT%:3306 -e MYSQL_DATABASE=%DB_NAME% -e MYSQL_USER=%DB_WP_USER% -e MYSQL_PASSWORD=%DB_WP_PASS% -e MYSQL_ROOT_PASSWORD=%DB_ROOT_PASS% docker.io/library/mysql:8.0 --default-authentication-plugin=mysql_native_password
 
 if errorlevel 1 (
     echo ERROR: Failed to start MySQL
@@ -72,11 +79,11 @@ echo Waiting for MySQL to be ready (45 seconds)...
 timeout /t 45 /nobreak >nul
 
 echo Testing MySQL connection...
-podman exec webp-migrator-mysql mysqladmin ping -u root -proot123 2>nul >nul
+podman exec webp-migrator-mysql mysqladmin ping -u root -p%DB_ROOT_PASS% 2>nul >nul
 if errorlevel 1 (
     echo MySQL not ready yet, trying once more...
     timeout /t 15 /nobreak >nul
-    podman exec webp-migrator-mysql mysqladmin ping -u root -proot123 2>nul >nul
+    podman exec webp-migrator-mysql mysqladmin ping -u root -p%DB_ROOT_PASS% 2>nul >nul
             if errorlevel 1 (
             echo ERROR: MySQL not ready after extended wait
             echo You can check MySQL logs with: podman logs webp-migrator-mysql
@@ -90,7 +97,9 @@ echo.
 
 REM Start WordPress
 echo Starting WordPress...
-podman run -d --name webp-migrator-wordpress --network webp-migrator-net -p 8080:80 -e WORDPRESS_DB_HOST=webp-migrator-mysql -e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress123 -e WORDPRESS_DB_NAME=wordpress_webp_test -e WORDPRESS_DEBUG=1 -v "%CD%\src:/var/www/html/wp-content/plugins/webp-safe-migrator" docker.io/library/wordpress:latest
+echo * WordPress port: %WP_PORT%
+echo * Site URL: %WP_SITE_URL%
+podman run -d --name webp-migrator-wordpress --network webp-migrator-net -p %WP_PORT%:80 -e WORDPRESS_DB_HOST=webp-migrator-mysql -e WORDPRESS_DB_USER=%DB_WP_USER% -e WORDPRESS_DB_PASSWORD=%DB_WP_PASS% -e WORDPRESS_DB_NAME=%DB_NAME% -e WORDPRESS_DEBUG=1 -v "%CD%\src:/var/www/html/wp-content/plugins/webp-safe-migrator" docker.io/library/wordpress:latest
 
 if errorlevel 1 (
     echo ERROR: Failed to start WordPress
@@ -103,7 +112,8 @@ echo.
 
 REM Start phpMyAdmin
 echo Starting phpMyAdmin...
-podman run -d --name webp-migrator-phpmyadmin --network webp-migrator-net -p 8081:80 -e PMA_HOST=webp-migrator-mysql -e PMA_USER=root -e PMA_PASSWORD=root123 docker.io/library/phpmyadmin:latest
+echo * phpMyAdmin port: %PMA_PORT%
+podman run -d --name webp-migrator-phpmyadmin --network webp-migrator-net -p %PMA_PORT%:80 -e PMA_HOST=webp-migrator-mysql -e PMA_USER=root -e PMA_PASSWORD=%DB_ROOT_PASS% docker.io/library/phpmyadmin:latest
 
 if errorlevel 1 (
     echo ERROR: Failed to start phpMyAdmin
@@ -142,13 +152,26 @@ echo.
 
 REM Install WordPress
 echo Installing WordPress...
-podman exec webp-migrator-wordpress wp core install --url="http://localhost:8080" --title="WebP Migrator Test Site" --admin_user="admin" --admin_password="admin123!" --admin_email="admin@webp-test.local" --locale="en_US" --skip-email --allow-root
+echo * Admin user: %WP_ADMIN_USER%
+echo * Site title: %WP_SITE_TITLE%
+podman exec webp-migrator-wordpress wp core install --url="%WP_SITE_URL%" --title="%WP_SITE_TITLE%" --admin_user="%WP_ADMIN_USER%" --admin_password="%WP_ADMIN_PASS%" --admin_email="%WP_ADMIN_EMAIL%" --locale="en_US" --skip-email --allow-root
 
 if errorlevel 1 (
     echo ! WordPress installation had issues - you may need to complete setup manually
-    echo   Go to http://localhost:8080 to finish WordPress setup
+    echo   Go to %WP_SITE_URL% to finish WordPress setup
 ) else (
     echo * WordPress installed successfully!
+)
+
+echo.
+
+REM Always ensure admin user has correct password (handles restarts/re-runs)
+echo Updating admin user credentials...
+podman exec webp-migrator-wordpress wp user update "%WP_ADMIN_USER%" --user_pass="%WP_ADMIN_PASS%" --user_email="%WP_ADMIN_EMAIL%" --allow-root 2>nul
+if errorlevel 1 (
+    echo ! Admin user update had issues, but this is normal on first install
+) else (
+    echo * Admin user credentials updated successfully!
 )
 
 echo.
@@ -168,7 +191,7 @@ echo.
 
 REM Create sample content
 echo Creating sample content...
-podman exec webp-migrator-wordpress wp post create --post_type=page --post_title="WebP Migrator Test Guide" --post_content="<h2>Welcome to WebP Safe Migrator Test Site</h2><p>Go to Media → WebP Migrator to start testing.</p>" --post_status=publish --allow-root 2>nul
+podman exec webp-migrator-wordpress wp post create --post_type=page --post_title="WebP Migrator Test Guide" --post_content="<h2>Welcome to %WP_SITE_TITLE%</h2><p>Go to Media → WebP Migrator to start testing.</p><p><strong>Admin Login:</strong><br>Username: %WP_ADMIN_USER%<br>Password: %WP_ADMIN_PASS%</p>" --post_status=publish --allow-root 2>nul
 
 echo * Sample content created
 
@@ -181,18 +204,21 @@ echo =====================================
 echo   DEPLOYMENT COMPLETE!
 echo =====================================
 echo.
-echo * WordPress Site: http://localhost:8080
-echo * WordPress Admin: http://localhost:8080/wp-admin
-echo * phpMyAdmin: http://localhost:8081
+echo * WordPress Site: %WP_SITE_URL%
+echo * WordPress Admin: %WP_SITE_URL%/wp-admin
+echo * phpMyAdmin: http://localhost:%PMA_PORT%
 echo.
-echo WordPress Credentials:
-echo   Username: admin
-echo   Password: admin123!
+echo WordPress Credentials (from config):
+echo   Username: %WP_ADMIN_USER%
+echo   Password: %WP_ADMIN_PASS%
+echo   Email: %WP_ADMIN_EMAIL%
 echo.
-echo Database Credentials:
-echo   Database: wordpress_webp_test
-echo   User: wordpress / wordpress123
-echo   Root: root / root123
+echo Database Credentials (from config):
+echo   Database: %DB_NAME%
+echo   WordPress User: %DB_WP_USER% / %DB_WP_PASS%
+echo   Root User: root / %DB_ROOT_PASS%
+echo.
+echo Configuration File: webp-migrator.env
 echo.
 echo Plugin Access:
 echo   Go to Media → WebP Migrator in WordPress admin
@@ -200,15 +226,20 @@ echo.
 
 REM Open WordPress in default browser
 echo Opening WordPress in browser...
-start http://localhost:8080
+start %WP_SITE_URL%
 
 echo.
 echo SUCCESS! WordPress with WebP Safe Migrator is ready!
+echo.
+echo IMPORTANT: Your credentials are configurable!
+echo Edit 'webp-migrator.env' to customize usernames/passwords
+echo Then run this script again to apply changes.
 echo.
 echo Management Scripts Available:
 echo   launch-webp-migrator.bat        - Start/restart (this script)
 echo   stop-webp-migrator.bat          - Stop containers (keep data)
 echo   cleanup-webp-migrator.bat       - Complete cleanup (removes all data)
 echo   status-webp-migrator.bat        - Show status
+echo   manage-wp.bat                   - WordPress management commands
 echo.
 echo Script completed successfully!
