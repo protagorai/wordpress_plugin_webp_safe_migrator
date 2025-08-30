@@ -207,4 +207,4 @@ Then rerun the launcher script to apply changes.
 
 ---
 
-**Summary**: The login issue was caused by inconsistent password configuration across platforms. The fix ensures all platforms use the same credentials (`admin/admin123!`) and includes robust health checks and auto-installation capabilities for consistent, reliable WordPress setup.
+**Summary**: The login issue was caused by inconsistent password configuration and Windows batch file handling of special characters. The fix standardizes all platforms on the same credentials (`admin/admin123`) and includes robust health checks and auto-installation capabilities for consistent, reliable WordPress setup.
