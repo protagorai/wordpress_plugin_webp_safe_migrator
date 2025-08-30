@@ -3,16 +3,16 @@
 Quick reference for the most frequently used commands across all platforms.
 
 ## 📋 Table of Contents
-- [🚀 Launch Commands](#-launch-commands)
-- [🛑 Shutdown Commands](#-shutdown-commands) 
-- [🧹 Cleanup Commands](#-cleanup-commands)
+- [🚀 Launch](#-launch-commands)
+- [🛑 Shutdown](#-shutdown-commands) 
+- [🧹 Cleanup](#-cleanup-commands)
 - [📊 Status & Monitoring](#-status--monitoring)
-- [🔧 Development Commands](#-development-commands)
-- [🆘 Emergency Commands](#-emergency-commands)
+- [🔧 Development](#-development-commands)
+- [🆘 Emergency](#-emergency-commands)
 
 ---
 
-## 🚀 Launch Commands
+## 🚀 Launch
 
 ### **One-Command Setup (Recommended)**
 
@@ -76,7 +76,7 @@ docker-compose up -d
 
 ---
 
-## 🛑 Shutdown Commands
+## 🛑 Shutdown
 
 ### **Graceful Shutdown (Recommended)**
 
@@ -117,7 +117,7 @@ docker ps
 
 ---
 
-## 🧹 Cleanup Commands
+## 🧹 Cleanup
 
 ### **Complete Environment Cleanup**
 
@@ -239,7 +239,7 @@ podman exec webp-migrator-wordpress ping -c 1 webp-migrator-mysql
 
 ---
 
-## 🔧 Development Commands
+## 🔧 Development
 
 ### **Plugin Development**
 ```bash
@@ -302,7 +302,7 @@ podman exec -it webp-migrator-mysql bash
 
 ---
 
-## 🆘 Emergency Commands
+## 🆘 Emergency
 
 ### **Force Stop Everything**
 ```bash

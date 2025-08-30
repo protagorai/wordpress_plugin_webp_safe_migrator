@@ -6,6 +6,7 @@
 
 ### **Get Started**
 - **[🎯 Set up everything in one command](QUICK_START.md#-instant-deployment-recommended)** → Use `instant-deploy.ps1` or `instant-deploy.sh`
+- **[⚙️ Customize configuration](README-CONFIG-SYSTEM.md)** → Templates for usernames, passwords, domains, etc.
 - **[🔧 Set up with custom options](DEPLOYMENT_GUIDE.md#-deployment-options)** → Choose from multiple deployment methods
 - **[📖 Learn all available commands](COMMAND_CHEAT_SHEET.md)** → Complete command reference
 
