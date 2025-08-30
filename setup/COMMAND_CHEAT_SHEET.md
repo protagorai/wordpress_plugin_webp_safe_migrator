@@ -8,6 +8,7 @@ Quick reference for the most frequently used commands across all platforms.
 - [🧹 Cleanup](#-cleanup-commands)
 - [📊 Status & Monitoring](#-status--monitoring)
 - [🔧 Development](#-development-commands)
+- [⚙️ Configuration](#-configuration-management)
 - [🆘 Emergency](#-emergency-commands)
 
 ---
@@ -298,6 +299,95 @@ docker exec -it webp-migrator-wordpress bash
 
 # Database container shell
 podman exec -it webp-migrator-mysql bash
+```
+
+---
+
+## ⚙️ Configuration Management
+
+### **Configuration Templates**
+
+#### Copy and Customize Templates
+```bash
+# Simple configuration (recommended for beginners)
+cp setup/simple-config.yaml my-config.yaml
+
+# Complete configuration (all options)  
+cp setup/webp-migrator-config.yaml my-config.yaml
+
+# Edit configuration file
+nano my-config.yaml        # Linux/macOS
+notepad my-config.yaml     # Windows
+```
+
+#### Key Settings to Customize
+```yaml
+# Database credentials
+database:
+  name: "my_wordpress_db"           # Custom database name
+  wordpress_user:
+    username: "my_wp_user"          # Custom WordPress DB user
+    password: "auto"                # Auto-generate secure password
+
+# WordPress admin
+wordpress:
+  site:
+    title: "My WebP Site"           # Site title
+    url: "https://my-domain.com"    # Custom domain
+  admin_user:
+    username: "myadmin"             # Admin username  
+    password: "auto"                # Auto-generate secure password
+    email: "admin@my-domain.com"    # Admin email
+
+# Infrastructure
+infrastructure:
+  container_engine: "podman"        # or "docker"
+  install_path: "~/my-webp-test"    # Installation directory
+  ports:
+    http: 8080                      # Custom HTTP port
+    https: 8443                     # Custom HTTPS port
+```
+
+### **Generate Custom Setup**
+
+#### Configuration-Based Deployment
+```bash
+# Generate all setup files from configuration
+./setup/generate-config.sh my-config.yaml
+
+# Deploy with generated configuration
+cd setup/generated/
+docker-compose up -d
+./install-automated.sh
+
+# Or use Python directly  
+python3 setup/config-generator.py my-config.yaml -o setup/generated/
+```
+
+#### Configuration Examples
+```bash
+# Development setup
+cp setup/simple-config.yaml dev-config.yaml
+# Edit dev-config.yaml for development settings
+./setup/generate-config.sh dev-config.yaml -o dev/
+
+# Production setup
+cp setup/webp-migrator-config.yaml prod-config.yaml  
+# Edit prod-config.yaml for production settings
+./setup/generate-config.sh prod-config.yaml -o production/
+```
+
+### **Configuration Validation**
+```bash
+# Check YAML syntax
+python3 -c "import yaml; yaml.safe_load(open('my-config.yaml'))"
+
+# Validate Docker Compose output
+cd setup/generated/
+docker-compose config
+
+# Test configuration without deploying
+./setup/generate-config.sh my-config.yaml --validate-only
 ```
 
 ---

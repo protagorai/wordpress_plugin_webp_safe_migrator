@@ -24,6 +24,7 @@
 #### Quick Operations
 - **[🎛️ Operations Index](../setup/OPERATIONS_INDEX.md)** - **← START HERE** - Quick navigation to common tasks
 - **[🎯 Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
+- **[⚙️ Configuration Templates](../setup/README-CONFIG-SYSTEM.md)** - Customize usernames, passwords, domains, ports
 - **[🛑 Graceful Shutdown Guide](../setup/GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
 
 #### Setup & Configuration
@@ -85,6 +86,7 @@
 |----------|---------|----------|
 | [🎛️ Operations Index](../setup/OPERATIONS_INDEX.md) | Quick task navigation | **Everyone** |
 | [🎯 Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md) | Daily commands reference | **Everyone** |
+| [⚙️ Configuration Templates](../setup/README-CONFIG-SYSTEM.md) | Customize setup parameters | **Everyone** |
 | [🛑 Shutdown Guide](../setup/GRACEFUL_SHUTDOWN.md) | Proper shutdown procedures | **Everyone** |
 | [README](../README.md) | Installation & Usage | End Users |
 | [Requirements](REQUIREMENTS_ANALYSIS.md) | Requirements Satisfaction | All |

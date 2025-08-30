@@ -26,6 +26,12 @@
 - **[🔄 Start fresh](COMMAND_CHEAT_SHEET.md#fresh-start)** → Clean + redeploy
 - **[🆘 Emergency shutdown](GRACEFUL_SHUTDOWN.md#-emergency-shutdown)** → Force stop everything
 
+### **Configuration & Customization**
+- **[⚙️ Quick config setup](README-CONFIG-SYSTEM.md#-quick-start)** → Copy template and customize values
+- **[🔐 Change passwords/usernames](README-CONFIG-SYSTEM.md#basic-configuration-customize-these-values)** → Database users, WordPress admin, etc.
+- **[🌐 Custom domains/ports](README-CONFIG-SYSTEM.md#infrastructure-configuration)** → Set custom URLs and ports
+- **[🔧 Generate custom setup](README-CONFIG-SYSTEM.md#-generate-configuration-files)** → Auto-generate deployment files
+
 ### **Troubleshooting**
 - **[❓ Common issues](QUICK_START.md#-troubleshooting)** → Port conflicts, container issues
 - **[🔧 Shutdown problems](GRACEFUL_SHUTDOWN.md#-shutdown-troubleshooting)** → Won't stop, port still in use
@@ -50,6 +56,14 @@
 ./setup/podman-setup.sh status  # Check
 ./setup/podman-setup.sh down    # Stop
 ./setup/podman-setup.sh clean   # Reset
+```
+
+### **Configuration Setup**
+```bash
+# Quick config with templates
+cp setup/simple-config.yaml my-config.yaml        # Copy template
+# Edit my-config.yaml (usernames, passwords, domains)
+./setup/generate-config.sh my-config.yaml         # Generate setup
 ```
 
 ### **Plugin Development**
@@ -84,6 +98,7 @@ After setup, access your development environment:
 | **[🚀 Quick Start](QUICK_START.md)** | Complete setup walkthrough | First time setup |
 | **[🎛️ Command Cheat Sheet](COMMAND_CHEAT_SHEET.md)** | All commands reference | Daily operations |
 | **[🛑 Graceful Shutdown](GRACEFUL_SHUTDOWN.md)** | Proper shutdown procedures | Stopping safely |
+| **[⚙️ Configuration System](README-CONFIG-SYSTEM.md)** | Template customization guide | Custom configurations |
 | **[📖 Deployment Guide](DEPLOYMENT_GUIDE.md)** | Advanced deployment options | Custom setups |
 | **[🐧 Bash Scripts Guide](BASH_SCRIPTS_GUIDE.md)** | Linux/macOS specific docs | Unix systems |
 | **[🪟 Plugin Manager Guide](PLUGIN_MANAGER_GUIDE.md)** | Plugin lifecycle management | Plugin development |
