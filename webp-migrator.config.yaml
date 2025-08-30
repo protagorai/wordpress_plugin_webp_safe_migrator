@@ -1,0 +1,91 @@
+# WebP Safe Migrator - Developer Configuration
+# This file allows easy customization of credentials and settings
+# Copy and modify this file as needed for your development environment
+
+# =============================================================================
+# DEVELOPER CREDENTIALS - CUSTOMIZE THESE VALUES
+# =============================================================================
+
+# WordPress Admin User (the main admin account)
+wordpress_admin:
+  username: "admin"
+  password: "admin123!"
+  email: "admin@webp-test.local"
+  first_name: "WebP"
+  last_name: "Admin"
+
+# Database Credentials
+database:
+  # WordPress database user (for WordPress to connect to MySQL)
+  wp_user:
+    username: "wordpress"
+    password: "wordpress123"
+  
+  # Root database user (for admin access)
+  root_user:
+    username: "root"
+    password: "root123"
+  
+  # Database name
+  database_name: "wordpress_webp_test"
+
+# Container and Port Configuration
+infrastructure:
+  # Port mappings (change if you have conflicts)
+  ports:
+    wordpress: 8080        # WordPress site will be available at http://localhost:8080
+    mysql: 3307           # MySQL external port
+    phpmyadmin: 8081      # phpMyAdmin will be available at http://localhost:8081
+
+# WordPress Site Settings
+wordpress_site:
+  title: "WebP Migrator Test Site"
+  tagline: "Testing WebP conversion and migration"
+  url: "http://localhost:8080"  # Should match the wordpress port above
+  language: "en_US"
+
+# Development Settings
+development:
+  # WordPress debug settings
+  debug_mode: true
+  debug_log: true
+  debug_display: false
+  script_debug: true
+  
+  # PHP settings
+  memory_limit: "512M"
+  max_execution_time: 300
+  upload_max_filesize: "128M"
+  post_max_size: "128M"
+
+# Plugin Configuration
+webp_migrator:
+  dev_mode: true
+  log_level: "debug"
+  default_quality: 75
+  default_batch_size: 10
+  validation_mode: true
+
+# =============================================================================
+# NOTES FOR DEVELOPERS
+# =============================================================================
+# 
+# To customize your setup:
+# 1. Change the passwords above to your preferred values
+# 2. Update the ports if you have conflicts with other services
+# 3. Modify the WordPress admin email if needed
+# 4. Run launch-webp-migrator.bat to apply changes
+#
+# The launch script will:
+# - Read these values automatically
+# - Create/update the WordPress admin user with your credentials
+# - Use your specified database credentials
+# - Apply all settings on every restart
+#
+# Security Note:
+# - This file contains passwords in plain text
+# - Keep it in your local development environment only
+# - Do not commit real passwords to version control
+# - Consider using .env files or environment variables for production
+#
+# =============================================================================
