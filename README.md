@@ -81,7 +81,7 @@ Complete WordPress setup with zero manual intervention:
 
 # Opens WordPress at http://localhost:8080 with:
 # - Username: admin
-# - Password: admin123!
+# - Password: admin123
 # - Plugin pre-installed and activated
 ```
 

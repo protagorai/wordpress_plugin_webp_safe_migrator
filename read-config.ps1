@@ -82,7 +82,7 @@ if (-not (Test-Path $ConfigFile)) {
     
     # Set default environment variables
     $env:WP_ADMIN_USER = "admin"
-    $env:WP_ADMIN_PASS = "admin123!"
+    $env:WP_ADMIN_PASS = "admin123"
     $env:WP_ADMIN_EMAIL = "admin@webp-test.local"
     $env:DB_WP_USER = "wordpress"
     $env:DB_WP_PASS = "wordpress123"
@@ -94,7 +94,7 @@ if (-not (Test-Path $ConfigFile)) {
     $env:WP_SITE_TITLE = "WebP Migrator Test Site"
     $env:WP_SITE_URL = "http://localhost:8080"
     
-    Write-Host "Using default credentials - WordPress admin: admin / admin123!" -ForegroundColor Green
+    Write-Host "Using default credentials - WordPress admin: admin / admin123" -ForegroundColor Green
     return
 }
 
@@ -106,13 +106,13 @@ try {
     # Extract WordPress admin credentials
     if ($config.ContainsKey("wordpress_admin")) {
         $env:WP_ADMIN_USER = if ($config["wordpress_admin"]["username"]) { $config["wordpress_admin"]["username"] } else { "admin" }
-        $env:WP_ADMIN_PASS = if ($config["wordpress_admin"]["password"]) { $config["wordpress_admin"]["password"] } else { "admin123!" }
+        $env:WP_ADMIN_PASS = if ($config["wordpress_admin"]["password"]) { $config["wordpress_admin"]["password"] } else { "admin123" }
         $env:WP_ADMIN_EMAIL = if ($config["wordpress_admin"]["email"]) { $config["wordpress_admin"]["email"] } else { "admin@webp-test.local" }
         $env:WP_ADMIN_FIRST = if ($config["wordpress_admin"]["first_name"]) { $config["wordpress_admin"]["first_name"] } else { "WebP" }
         $env:WP_ADMIN_LAST = if ($config["wordpress_admin"]["last_name"]) { $config["wordpress_admin"]["last_name"] } else { "Admin" }
     } else {
         $env:WP_ADMIN_USER = "admin"
-        $env:WP_ADMIN_PASS = "admin123!"
+        $env:WP_ADMIN_PASS = "admin123"
         $env:WP_ADMIN_EMAIL = "admin@webp-test.local"
         $env:WP_ADMIN_FIRST = "WebP"
         $env:WP_ADMIN_LAST = "Admin"
@@ -164,7 +164,7 @@ try {
     
     # Fallback to defaults
     $env:WP_ADMIN_USER = "admin"
-    $env:WP_ADMIN_PASS = "admin123!"
+    $env:WP_ADMIN_PASS = "admin123"
     $env:WP_ADMIN_EMAIL = "admin@webp-test.local"
     $env:DB_WP_USER = "wordpress"
     $env:DB_WP_PASS = "wordpress123"

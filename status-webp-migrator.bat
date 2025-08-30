@@ -122,7 +122,7 @@ echo WordPress Admin: http://localhost:8080/wp-admin
 echo phpMyAdmin: http://localhost:8081
 echo.
 echo Default Credentials:
-echo WordPress: admin / admin123!
+echo WordPress: admin / admin123
 echo Database: wordpress / wordpress123
 echo DB Root: root / root123
 echo.

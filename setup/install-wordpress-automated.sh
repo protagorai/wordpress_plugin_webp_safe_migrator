@@ -10,7 +10,7 @@ WP_VERSION="latest"
 PHP_VERSION="8.1"
 SITE_TITLE="WebP Migrator Test Site"
 ADMIN_USER="admin"
-ADMIN_PASSWORD="admin123!"
+ADMIN_PASSWORD="admin123"
 ADMIN_EMAIL="admin@webp-test.local"
 SKIP_DOWNLOADS=false
 START_SERVICES=true
@@ -94,7 +94,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --php-version VERSION    PHP version (default: 8.1)"
             echo "  --site-title TITLE       WordPress site title (default: 'WebP Migrator Test Site')"
             echo "  --admin-user USER        Admin username (default: admin)"
-            echo "  --admin-password PASS    Admin password (default: admin123!)"
+            echo "  --admin-password PASS    Admin password (default: admin123)"
             echo "  --admin-email EMAIL      Admin email (default: admin@webp-test.local)"
             echo "  --skip-downloads         Skip downloading if files exist"
             echo "  --no-start-services      Don't start services after installation"

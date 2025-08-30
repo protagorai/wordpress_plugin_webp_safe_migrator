@@ -36,7 +36,7 @@ The instant deployment script will:
 |---------|-----|-------------|
 | **🌐 WordPress** | `http://localhost:8080` | N/A |
 | **🚀 Auto-Login** | `http://localhost:8080/?auto_login=dev_mode` | **← USE THIS** |
-| **🔧 Admin Panel** | `http://localhost:8080/wp-admin` | admin / admin123! |
+| **🔧 Admin Panel** | `http://localhost:8080/wp-admin` | admin / admin123 |
 | **🔌 Plugin** | Media → WebP Migrator | Same as admin |
 | **🗄️ Database** | `http://localhost:8081` | root / root123 |
 
@@ -107,7 +107,7 @@ podman network rm webp-migrator-net
 After setup completes:
 
 1. **Browser opens automatically** to WordPress
-2. **Login happens automatically** (or use admin/admin123!)
+2. **Login happens automatically** (or use admin/admin123)
 3. **Go to Media → WebP Migrator**
 4. **Upload test images** (JPEG, PNG, GIF)
 5. **Configure settings**: Quality 75, Batch size 10

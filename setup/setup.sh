@@ -261,7 +261,7 @@ main() {
             echo ""
             echo -e "${CYAN}🔑 Credentials:${NC}"
             echo "   👤 Username: admin"
-            echo "   🔑 Password: admin123!"
+            echo "   🔑 Password: admin123"
             echo ""
             echo -e "${CYAN}🛠️  Development:${NC}"
             echo "   📁 Plugin files: Edit in src/ directory (auto-synced)"

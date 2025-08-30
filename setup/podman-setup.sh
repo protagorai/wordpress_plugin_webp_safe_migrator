@@ -464,7 +464,7 @@ case $ACTION in
             --url="http://localhost:8080" \
             --title="WebP Migrator Test Site" \
             --admin_user="admin" \
-            --admin_password="admin123!" \
+            --admin_password="admin123" \
             --admin_email="admin@webp-test.local" \
             --skip-email \
             --allow-root
@@ -487,7 +487,7 @@ case $ACTION in
         echo -e "${CYAN}🌐 WordPress: http://localhost:8080${NC}"
         echo -e "${CYAN}🔧 Admin: http://localhost:8080/wp-admin${NC}"
         echo -e "${YELLOW}👤 Username: admin${NC}"
-        echo -e "${YELLOW}🔑 Password: admin123!${NC}"
+        echo -e "${YELLOW}🔑 Password: admin123${NC}"
         ;;
         
     clean)

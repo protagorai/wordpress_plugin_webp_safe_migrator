@@ -8,12 +8,12 @@ When starting fresh containers or cleaning and relaunching the project, the Word
 
 ### 1. **Credential Inconsistency** (Primary Issue)
 - **`webp-migrator.env`** (used by Windows): `WP_ADMIN_PASS=admin123` ❌
-- **Expected by user**: `admin123!` ✅
-- **Most other scripts**: `admin123!` ✅
+- **Expected by user**: `admin123` ✅
+- **Most other scripts**: `admin123` ✅
 - **Result**: Windows launcher created admin user with wrong password
 
 ### 2. **Platform-Specific Differences**
-- Linux/macOS scripts hardcode `admin123!`
+- Linux/macOS scripts hardcode `admin123`
 - Windows scripts load from `webp-migrator.env` which had `admin123`
 - No single source of truth for credentials
 
@@ -31,8 +31,8 @@ When starting fresh containers or cleaning and relaunching the project, the Word
 ## Implemented Fixes
 
 ### ✅ 1. Fixed Credential Consistency
-- **Updated `webp-migrator.env`**: Changed `WP_ADMIN_PASS=admin123!`
-- **All platforms now use**: `admin/admin123!`
+- **Updated `webp-migrator.env`**: Changed `WP_ADMIN_PASS=admin123`
+- **All platforms now use**: `admin/admin123`
 - **Single source of truth**: Configuration files are consistently used
 
 ### ✅ 2. Enhanced Docker Compose Configuration

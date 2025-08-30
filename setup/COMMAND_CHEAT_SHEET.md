@@ -70,7 +70,7 @@ docker-compose up -d
 | Service | URL | Credentials |
 |---------|-----|-------------|
 | **WordPress Site** | `http://localhost:8080` | N/A |
-| **WordPress Admin** | `http://localhost:8080/wp-admin` | admin / admin123! |
+| **WordPress Admin** | `http://localhost:8080/wp-admin` | admin / admin123 |
 | **Plugin Interface** | Media → WebP Migrator | Same as admin |
 | **Database Admin** | `http://localhost:8081` | root / root123 |
 | **Auto-Login URL** | `http://localhost:8080/?auto_login=dev_mode` | **← Use This** |

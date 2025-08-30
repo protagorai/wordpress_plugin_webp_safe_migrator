@@ -29,7 +29,7 @@ $DBPassword = "wordpress123"
 $DBRootPassword = "root123"
 $SiteTitle = "WebP Safe Migrator Test Site"
 $AdminUser = "admin"
-$AdminPassword = "admin123!"
+$AdminPassword = "admin123"
 $AdminEmail = "admin@webp-test.local"
 
 # Color functions

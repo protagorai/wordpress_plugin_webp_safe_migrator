@@ -145,7 +145,7 @@ After successful deployment, you'll have access to:
 ### **🔧 WordPress Admin**  
 - **URL**: `http://localhost:8080/wp-admin`
 - **Username**: `admin`
-- **Password**: `admin123!`
+- **Password**: `admin123`
 - **Purpose**: WordPress dashboard and plugin management
 
 ### **🗄️ Database Management**

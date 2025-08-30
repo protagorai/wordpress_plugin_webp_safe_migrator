@@ -18,7 +18,7 @@ if [[ -f "$SCRIPT_DIR/webp-migrator-deploy.sh" ]]; then
         echo ""
         echo "🎉 SUCCESS! WebP Safe Migrator is ready!"
         echo "WordPress should be accessible at http://localhost:8080"
-        echo "Admin: http://localhost:8080/wp-admin (admin / admin123!)"
+        echo "Admin: http://localhost:8080/wp-admin (admin / admin123)"
     fi
 else
     echo "❌ Setup script not found!"

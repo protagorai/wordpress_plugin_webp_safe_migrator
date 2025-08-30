@@ -7,7 +7,7 @@ param(
     [string]$PHPVersion = "8.1",
     [string]$SiteTitle = "WebP Migrator Test Site",
     [string]$AdminUser = "admin",
-    [string]$AdminPassword = "admin123!",
+    [string]$AdminPassword = "admin123",
     [string]$AdminEmail = "admin@webp-test.local",
     [switch]$SkipDownloads,
     [switch]$StartServices,

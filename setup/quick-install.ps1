@@ -36,7 +36,7 @@ try {
         Write-Host ""
         Write-Host "🔑 Login Credentials:" -ForegroundColor Cyan
         Write-Host "   Username: admin" -ForegroundColor White
-        Write-Host "   Password: admin123!" -ForegroundColor White
+        Write-Host "   Password: admin123" -ForegroundColor White
         Write-Host ""
         Write-Host "🛠️ Service Management:" -ForegroundColor Cyan
         Write-Host "   Start:  $InstallPath\start-services.bat" -ForegroundColor White

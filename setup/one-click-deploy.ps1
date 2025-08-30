@@ -26,7 +26,7 @@ if ($Help) {
     Write-Host ""
     Write-Host "Default credentials:"
     Write-Host "  👤 Username: admin"
-    Write-Host "  🔑 Password: admin123!"
+    Write-Host "  🔑 Password: admin123"
     exit 0
 }
 

@@ -75,7 +75,7 @@ Simple, reliable scripts to launch and manage your WebP Safe Migrator developmen
 - **MySQL**: localhost:3307
 
 ### **Credentials**
-- **WordPress Admin**: admin / admin123!
+- **WordPress Admin**: admin / admin123
 - **Database User**: wordpress / wordpress123
 - **Database Root**: root / root123
 
@@ -187,7 +187,7 @@ podman logs webp-migrator-mysql
 - **Stop vs Cleanup**: Stop preserves data, Cleanup removes everything
 - **Plugin development**: Edit files in `src/` - changes appear immediately
 - **Database access**: Use phpMyAdmin at http://localhost:8081 for direct DB access
-- **WordPress access**: Use admin/admin123! for immediate access
+- **WordPress access**: Use admin/admin123 for immediate access
 
 ## 📚 Related Documentation
 

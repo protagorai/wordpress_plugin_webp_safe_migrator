@@ -9,7 +9,7 @@
 # WordPress Admin User (the main admin account)
 wordpress_admin:
   username: "admin"
-  password: "admin123!"
+  password: "admin123"
   email: "admin@webp-test.local"
   first_name: "WebP"
   last_name: "Admin"

@@ -87,7 +87,7 @@ After setup, access your development environment:
 | **🔌 Plugin Interface** | Media → WebP Migrator | Plugin settings |
 | **🗄️ Database Admin** | [http://localhost:8081](http://localhost:8081) | phpMyAdmin |
 
-**Default Credentials:** admin / admin123!
+**Default Credentials:** admin / admin123
 
 ---
 

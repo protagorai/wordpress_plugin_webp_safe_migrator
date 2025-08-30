@@ -32,7 +32,7 @@ show_help() {
     echo ""
     echo "Default credentials:"
     echo -e "  👤 Username: ${YELLOW}admin${NC}"
-    echo -e "  🔑 Password: ${YELLOW}admin123!${NC}"
+    echo -e "  🔑 Password: ${YELLOW}admin123${NC}"
 }
 
 # Parse arguments

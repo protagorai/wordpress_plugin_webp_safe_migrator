@@ -392,7 +392,7 @@ switch ($Action) {
             --url="http://localhost:8080" `
             --title="WebP Migrator Test Site" `
             --admin_user="admin" `
-            --admin_password="admin123!" `
+            --admin_password="admin123" `
             --admin_email="admin@webp-test.local" `
             --skip-email `
             --allow-root
@@ -415,7 +415,7 @@ switch ($Action) {
         Write-Host "🌐 WordPress: http://localhost:8080" -ForegroundColor Cyan
         Write-Host "🔧 Admin: http://localhost:8080/wp-admin" -ForegroundColor Cyan
         Write-Host "👤 Username: admin" -ForegroundColor Yellow
-        Write-Host "🔑 Password: admin123!" -ForegroundColor Yellow
+        Write-Host "🔑 Password: admin123" -ForegroundColor Yellow
     }
     
     "clean" {

@@ -30,7 +30,7 @@ DB_ROOT_PASSWORD="root123"
 # WordPress Configuration
 SITE_TITLE="WebP Migrator Test Site"
 ADMIN_USER="admin"
-ADMIN_PASSWORD="admin123!"
+ADMIN_PASSWORD="admin123"
 ADMIN_EMAIL="admin@webp-test.local"
 
 # Colors for output

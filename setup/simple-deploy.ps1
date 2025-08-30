@@ -21,7 +21,7 @@ $DBUser = "wordpress"
 $DBPassword = "wordpress123"
 $DBRootPassword = "root123"
 $AdminUser = "admin"
-$AdminPassword = "admin123!"
+$AdminPassword = "admin123"
 $AdminEmail = "admin@webp-test.local"
 
 Write-Host ""
