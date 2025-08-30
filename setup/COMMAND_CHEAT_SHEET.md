@@ -443,7 +443,7 @@ rm -rf ~/webp-migrator-test/
 
 ---
 
-## ⚡ Platform-Specific Quick Commands
+## ⚡ Platform-Specific Quick ed andbase u
 
 ### Windows PowerShell
 ```powershell
@@ -493,12 +493,14 @@ docker-compose down -v
 
 ### **Daily Development**
 ```bash
-1. ./setup/podman-setup.sh up          # Start environment
-2. # Edit files in src/
-3. ./setup/plugin-manager.sh update    # Update plugin
-4. # Test in browser at http://localhost:8080
-5. ./setup/podman-setup.sh down        # Stop when done
+1. ./launch-webp-migrator.sh           # Start environment (once)
+2. # Edit files in src/ directory
+3. # Refresh WordPress admin - changes appear immediately
+4. # NO container restart needed for code changes!
+5. ./stop-webp-migrator.sh             # Stop when done (data preserved)
 ```
+
+**Volume Mounting**: `src/` directory is live-mounted - PHP changes are instant!
 
 ### **Fresh Start**
 ```bash

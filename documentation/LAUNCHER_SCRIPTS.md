@@ -102,12 +102,33 @@ Simple, reliable scripts to launch and manage your WebP Safe Migrator developmen
 
 ## 🔄 Development Workflow
 
-### **Daily Development**
+### **Daily Development (Live Editing)**
 ```bash
-1. .\launch-webp-migrator.bat     # Start environment
+1. .\launch-webp-migrator.bat     # Start environment (once)
 2. # Edit files in src/ directory
-3. # Refresh WordPress admin to see changes
-4. .\stop-webp-migrator.bat       # Stop when done (data preserved)
+3. # Refresh WordPress admin - changes appear immediately
+4. # NO container restart needed for code changes!
+5. .\stop-webp-migrator.bat       # Stop when done (data preserved)
+```
+
+**Key: The `src/` directory is mounted as a live volume - PHP changes are instant!**
+
+### **When Container Restart IS Needed**
+```bash
+# Only restart for these changes:
+# - PHP configuration (upload limits, etc.)
+# - Apache configuration  
+# - Database schema changes
+# - Container configuration changes
+```
+
+### **When Container Restart is NOT Needed**
+```bash
+# Live changes for:
+# - Plugin PHP code editing
+# - WordPress content changes
+# - Database data changes (via admin/WP-CLI)
+# - Plugin settings and configuration
 ```
 
 ### **Project Completion**

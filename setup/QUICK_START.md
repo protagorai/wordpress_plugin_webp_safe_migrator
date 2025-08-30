@@ -140,6 +140,32 @@ The new setup system handles everything automatically. Just run the script and s
 
 **Pro tip**: Use the auto-login URL (`http://localhost:8080/?auto_login=dev_mode`) to skip manual login every time!
 
+## 🔄 **Development Workflow**
+
+### **Live Development (No Restarts Needed!)**
+```bash
+1. .\launch-webp-migrator.bat     # Start environment (once per session)
+2. Edit files in src/ directory  # ← Changes are LIVE!
+3. Refresh WordPress admin       # ← See changes immediately  
+4. Repeat steps 2-3              # ← Instant development cycle
+5. .\stop-webp-migrator.bat      # Stop when done (data preserved)
+```
+
+**💡 Key**: The `src/` directory is **volume-mounted** - PHP changes appear instantly without container restarts!
+
+### **When to Restart vs Not**
+```bash
+# ✓ NO restart needed (99% of development):
+#   - Plugin PHP code editing
+#   - WordPress content changes
+#   - Database data changes
+#   - Plugin settings
+
+# ✗ Restart needed (rare):
+#   - Container configuration changes
+#   - PHP.ini modifications
+```
+
 ## 📚 **Need More Help?**
 
 - **[🎛️ Operations Index](OPERATIONS_INDEX.md)** - Quick navigation to all common tasks

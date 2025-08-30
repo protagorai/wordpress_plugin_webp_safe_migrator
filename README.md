@@ -269,15 +269,23 @@ wp webp-migrator stats
 ## 🛠️ Development
 
 ### Local Environment Setup
-```powershell
-# Install WordPress stack (Windows)
-.\setup\install-wordpress.ps1
+```bash
+# Quick start (Windows)
+.\launch-webp-migrator.bat
 
-# Manage plugin installation
-.\setup\plugin-manager.ps1 install    # Install plugin
-.\setup\plugin-manager.ps1 update     # Update plugin
-.\setup\plugin-manager.ps1 backup     # Backup current version
+# Quick start (Linux/macOS)
+./launch-webp-migrator.sh
 ```
+
+### Development Workflow
+```bash
+1. Launch environment (once per session)
+2. Edit files in src/ directory  
+3. Refresh WordPress admin - changes are live!
+4. No container restart needed for code changes
+```
+
+**Key**: The `src/` directory is **volume-mounted** for instant code changes!
 
 ### Testing
 ```bash

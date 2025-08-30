@@ -125,12 +125,12 @@ After setup, access your development environment:
 6. **[Open your custom WordPress URL](http://localhost:8080/?auto_login=dev_mode)**
 
 ### **Daily Development**
-1. **Start**: `./setup/podman-setup.sh up`
+1. **Start**: `./launch-webp-migrator.sh` (or `.bat` on Windows)
 2. **[Open WordPress](http://localhost:8080/?auto_login=dev_mode)**
 3. **Edit files in `src/` directory**
-4. **Update plugin**: `./setup/plugin-manager.sh update`
-5. **Test changes in browser**
-6. **Stop when done**: `./setup/podman-setup.sh down`
+4. **Refresh WordPress admin** - changes appear immediately!
+5. **NO restart needed** - volume mounting makes changes live
+6. **Stop when done**: `./stop-webp-migrator.sh` (data preserved)
 
 ### **End of Project**
 1. **[Backup important data](COMMAND_CHEAT_SHEET.md#-development)**: `./setup/plugin-manager.sh backup`
