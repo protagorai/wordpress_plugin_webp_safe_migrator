@@ -226,6 +226,12 @@ wp webp-migrator stats
 
 ## 📚 Documentation
 
+### Quick Operations
+- **[🎛️ Operations Index](setup/OPERATIONS_INDEX.md)** - **← START HERE** - Quick navigation to common tasks
+- **[🎯 Command Cheat Sheet](setup/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
+- **[🛑 Graceful Shutdown Guide](setup/GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
+- **[🚀 Quick Start Guide](setup/QUICK_START.md)** - Complete setup walkthrough
+
 ### Core Documentation
 - **[📖 Documentation Index](documentation/INDEX.md)** - Complete documentation navigation
 - **[📋 Requirements Analysis](documentation/REQUIREMENTS_ANALYSIS.md)** - Requirements satisfaction and traceability
@@ -322,10 +328,11 @@ GPL-2.0+ (GNU General Public License v2.0 or later) - Compatible with WordPress 
 ---
 
 **🔗 Quick Navigation:**
-[📖 Full Documentation](documentation/INDEX.md) | 
-[📋 Requirements](documentation/REQUIREMENTS_ANALYSIS.md) |
+[🎛️ Operations](setup/OPERATIONS_INDEX.md) | 
+[🎯 Commands](setup/COMMAND_CHEAT_SHEET.md) |
+[🛑 Shutdown](setup/GRACEFUL_SHUTDOWN.md) | 
+[📖 Full Docs](documentation/INDEX.md) | 
 [🏗️ Architecture](documentation/ARCHITECTURE.md) | 
-[📊 Review](documentation/COMPREHENSIVE_REVIEW_SUMMARY.md) | 
 [🔧 Setup](setup/) | 
 [🧪 Tests](tests/)
 

@@ -20,6 +20,13 @@
   - [Batch Processing Sequence](diagrams/sequence-batch.svg) - Detailed batch operation flow
 
 ### 🔧 Development & Testing
+
+#### Quick Operations
+- **[🎛️ Operations Index](../setup/OPERATIONS_INDEX.md)** - **← START HERE** - Quick navigation to common tasks
+- **[🎯 Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
+- **[🛑 Graceful Shutdown Guide](../setup/GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
+
+#### Setup & Configuration
 - **[Setup Scripts](../setup/)** - Local development environment setup
   - **Windows (PowerShell)**:
     - [WordPress Installation](../setup/install-wordpress.ps1) - Automated WordPress stack setup
@@ -54,9 +61,11 @@
 ## Navigation Guide
 
 ### For Users
-1. Start with **[Main README](../README.md)** for installation and basic usage
-2. Review **[Architecture Overview](ARCHITECTURE.md)** for understanding system behavior
-3. Check **[Visual Diagrams](diagrams/)** for process flow comprehension
+1. Start with **[Operations Index](../setup/OPERATIONS_INDEX.md)** for quick task navigation
+2. Use **[Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** for daily operations
+3. Read **[Main README](../README.md)** for installation and basic usage
+4. Review **[Architecture Overview](ARCHITECTURE.md)** for understanding system behavior
+5. Check **[Visual Diagrams](diagrams/)** for process flow comprehension
 
 ### For Developers
 1. Read **[Comprehensive Review](COMPREHENSIVE_REVIEW_SUMMARY.md)** for complete analysis
@@ -74,6 +83,9 @@
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
+| [🎛️ Operations Index](../setup/OPERATIONS_INDEX.md) | Quick task navigation | **Everyone** |
+| [🎯 Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md) | Daily commands reference | **Everyone** |
+| [🛑 Shutdown Guide](../setup/GRACEFUL_SHUTDOWN.md) | Proper shutdown procedures | **Everyone** |
 | [README](../README.md) | Installation & Usage | End Users |
 | [Requirements](REQUIREMENTS_ANALYSIS.md) | Requirements Satisfaction | All |
 | [Architecture](ARCHITECTURE.md) | Technical Specs | Developers |

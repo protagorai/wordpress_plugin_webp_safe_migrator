@@ -67,23 +67,40 @@ cp simple-config.yaml my-setup.yaml
 ### **Check Status**
 ```bash
 podman ps  # or docker ps
+./setup/podman-setup.sh status  # Detailed status
 ```
 
 ### **Stop Everything**
 ```bash
+# Graceful shutdown (recommended)
+./setup/podman-setup.sh down
+
+# Or manual shutdown
 podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin
 ```
 
 ### **Start Everything**
 ```bash
+# Start all services
+./setup/podman-setup.sh up
+
+# Or manual start
 podman start webp-migrator-mysql webp-migrator-wordpress webp-migrator-phpmyadmin
 ```
 
 ### **Complete Cleanup**
 ```bash
+# Complete cleanup (⚠️ deletes all data)
+./setup/podman-setup.sh clean
+
+# Or manual cleanup
 podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin
 podman network rm webp-migrator-net
 ```
+
+**📖 For detailed management procedures, see:**
+- **[🎯 Command Cheat Sheet](COMMAND_CHEAT_SHEET.md)** - All commands reference
+- **[🛑 Graceful Shutdown Guide](GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
 
 ## 🎯 **Testing the Plugin**
 
@@ -122,4 +139,11 @@ The setup automatically fixes known plugin syntax errors. If you encounter issue
 The new setup system handles everything automatically. Just run the script and start developing!
 
 **Pro tip**: Use the auto-login URL (`http://localhost:8080/?auto_login=dev_mode`) to skip manual login every time!
+
+## 📚 **Need More Help?**
+
+- **[🎛️ Operations Index](OPERATIONS_INDEX.md)** - Quick navigation to all common tasks
+- **[🎯 Command Cheat Sheet](COMMAND_CHEAT_SHEET.md)** - Complete command reference
+- **[🛑 Graceful Shutdown Guide](GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
+- **[📖 Full Documentation](../documentation/INDEX.md)** - Complete technical documentation
 
