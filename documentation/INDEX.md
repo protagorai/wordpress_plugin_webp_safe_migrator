@@ -24,7 +24,7 @@
 #### Quick Operations
 - **[🎛️ Operations Index](../setup/OPERATIONS_INDEX.md)** - **← START HERE** - Quick navigation to common tasks
 - **[🎯 Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
-- **[⚙️ Configuration Templates](../setup/README-CONFIG-SYSTEM.md)** - Customize usernames, passwords, domains, ports
+- **[⚙️ Configuration Examples](../setup/CONFIG_EXAMPLES.md)** - Copy-paste examples for common customizations
 - **[🛑 Graceful Shutdown Guide](../setup/GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
 
 #### Setup & Configuration
@@ -63,10 +63,11 @@
 
 ### For Users
 1. Start with **[Operations Index](../setup/OPERATIONS_INDEX.md)** for quick task navigation
-2. Use **[Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** for daily operations
-3. Read **[Main README](../README.md)** for installation and basic usage
-4. Review **[Architecture Overview](ARCHITECTURE.md)** for understanding system behavior
-5. Check **[Visual Diagrams](diagrams/)** for process flow comprehension
+2. **Customize setup** with **[Configuration Examples](../setup/CONFIG_EXAMPLES.md)** (usernames, passwords, domains)
+3. Use **[Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** for daily operations
+4. Read **[Main README](../README.md)** for installation and basic usage
+5. Review **[Architecture Overview](ARCHITECTURE.md)** for understanding system behavior
+6. Check **[Visual Diagrams](diagrams/)** for process flow comprehension
 
 ### For Developers
 1. Read **[Comprehensive Review](COMPREHENSIVE_REVIEW_SUMMARY.md)** for complete analysis
@@ -86,7 +87,7 @@
 |----------|---------|----------|
 | [🎛️ Operations Index](../setup/OPERATIONS_INDEX.md) | Quick task navigation | **Everyone** |
 | [🎯 Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md) | Daily commands reference | **Everyone** |
-| [⚙️ Configuration Templates](../setup/README-CONFIG-SYSTEM.md) | Customize setup parameters | **Everyone** |
+| [⚙️ Configuration Examples](../setup/CONFIG_EXAMPLES.md) | Quick customization examples | **Everyone** |
 | [🛑 Shutdown Guide](../setup/GRACEFUL_SHUTDOWN.md) | Proper shutdown procedures | **Everyone** |
 | [README](../README.md) | Installation & Usage | End Users |
 | [Requirements](REQUIREMENTS_ANALYSIS.md) | Requirements Satisfaction | All |

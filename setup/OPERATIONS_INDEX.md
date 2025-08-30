@@ -27,10 +27,10 @@
 - **[🆘 Emergency shutdown](GRACEFUL_SHUTDOWN.md#-emergency-shutdown)** → Force stop everything
 
 ### **Configuration & Customization**
-- **[⚙️ Quick config setup](README-CONFIG-SYSTEM.md#-quick-start)** → Copy template and customize values
-- **[🔐 Change passwords/usernames](README-CONFIG-SYSTEM.md#basic-configuration-customize-these-values)** → Database users, WordPress admin, etc.
-- **[🌐 Custom domains/ports](README-CONFIG-SYSTEM.md#infrastructure-configuration)** → Set custom URLs and ports
-- **[🔧 Generate custom setup](README-CONFIG-SYSTEM.md#-generate-configuration-files)** → Auto-generate deployment files
+- **[⚙️ Quick config examples](CONFIG_EXAMPLES.md)** → Copy-paste examples for common setups
+- **[🔐 Change passwords/usernames](CONFIG_EXAMPLES.md#change-database-credentials)** → Database users, WordPress admin, etc.
+- **[🌐 Custom domains/ports](CONFIG_EXAMPLES.md#custom-domain-setup)** → Set custom URLs and ports
+- **[🔧 Complete config guide](README-CONFIG-SYSTEM.md)** → Full documentation with all options
 
 ### **Troubleshooting**
 - **[❓ Common issues](QUICK_START.md#-troubleshooting)** → Port conflicts, container issues
@@ -98,7 +98,8 @@ After setup, access your development environment:
 | **[🚀 Quick Start](QUICK_START.md)** | Complete setup walkthrough | First time setup |
 | **[🎛️ Command Cheat Sheet](COMMAND_CHEAT_SHEET.md)** | All commands reference | Daily operations |
 | **[🛑 Graceful Shutdown](GRACEFUL_SHUTDOWN.md)** | Proper shutdown procedures | Stopping safely |
-| **[⚙️ Configuration System](README-CONFIG-SYSTEM.md)** | Template customization guide | Custom configurations |
+| **[⚙️ Configuration Examples](CONFIG_EXAMPLES.md)** | Copy-paste config examples | Quick customization |
+| **[📋 Configuration System](README-CONFIG-SYSTEM.md)** | Complete customization guide | Advanced configurations |
 | **[📖 Deployment Guide](DEPLOYMENT_GUIDE.md)** | Advanced deployment options | Custom setups |
 | **[🐧 Bash Scripts Guide](BASH_SCRIPTS_GUIDE.md)** | Linux/macOS specific docs | Unix systems |
 | **[🪟 Plugin Manager Guide](PLUGIN_MANAGER_GUIDE.md)** | Plugin lifecycle management | Plugin development |
@@ -108,12 +109,20 @@ After setup, access your development environment:
 
 ## 🔥 **Most Common Tasks**
 
-### **First Time Setup**
+### **First Time Setup (Default)**
 1. **[Clone/download project](../README.md)**
 2. **[Run instant setup](QUICK_START.md#-instant-deployment-recommended)**: `./setup/instant-deploy.sh`
 3. **[Open WordPress](http://localhost:8080/?auto_login=dev_mode)** (auto-login)
 4. **Navigate to Media → WebP Migrator**
 5. **Upload test images and start converting!**
+
+### **First Time Setup (Custom)**
+1. **[Clone/download project](../README.md)**
+2. **[Copy config template](README-CONFIG-SYSTEM.md#-quick-start)**: `cp setup/simple-config.yaml my-config.yaml`
+3. **Edit my-config.yaml**: Change usernames, passwords, domains, ports
+4. **[Generate setup](README-CONFIG-SYSTEM.md#-generate-configuration-files)**: `./setup/generate-config.sh my-config.yaml`
+5. **Deploy**: `cd setup/generated/ && docker-compose up -d`
+6. **[Open your custom WordPress URL](http://localhost:8080/?auto_login=dev_mode)**
 
 ### **Daily Development**
 1. **Start**: `./setup/podman-setup.sh up`
