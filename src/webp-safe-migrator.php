@@ -248,7 +248,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             return;
         }
 
-        echo '<table class="widefat striped"><thead><tr><th>ID</th><th>Title</th><th>When</th><th>Posts</th><th>Postmeta</th><th>Options</th><th></th></tr></thead><tbody>';
+        echo '<table class="widefat striped"><thead><tr><th>ID</th><th>Title</th><th>When</th><th>Posts</th><th>Postmeta</th><th>Options</th><th>Users</th><th>Terms</th><th>Comments</th><th>Custom</th><th></th></tr></thead><tbody>';
         foreach ($rows as $r) {
             $id = (int)$r['ID'];
             $report = json_decode($r['report'], true) ?: [];
@@ -256,6 +256,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             $cntP = isset($report['posts']) ? count($report['posts']) : 0;
             $cntM = isset($report['postmeta']) ? count($report['postmeta']) : 0;
             $cntO = isset($report['options']) ? count($report['options']) : 0;
+            $cntU = isset($report['usermeta']) ? count($report['usermeta']) : 0;
+            $cntT = isset($report['termmeta']) ? count($report['termmeta']) : 0;
+            $cntC = isset($report['comments']) ? count($report['comments']) : 0;
+            $cntX = isset($report['custom_tables']) ? count($report['custom_tables']) : 0;
             echo '<tr>';
             echo '<td>'.esc_html($id).'</td>';
             echo '<td>'.esc_html(get_the_title($id)).'</td>';
@@ -263,6 +267,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             echo '<td>'.$cntP.'</td>';
             echo '<td>'.$cntM.'</td>';
             echo '<td>'.$cntO.'</td>';
+            echo '<td>'.$cntU.'</td>';
+            echo '<td>'.$cntT.'</td>';
+            echo '<td>'.$cntC.'</td>';
+            echo '<td>'.$cntX.'</td>';
             echo '<td><a class="button" href="'.esc_url(admin_url('upload.php?page=webp-safe-migrator-reports&attachment_id='.$id)).'">View</a></td>';
             echo '</tr>';
         }
@@ -306,6 +314,50 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 echo '<li><code>'.esc_html($opt).'</code></li>';
             }
             echo '</ul>';
+        } else echo '<p>—</p>';
+
+        echo '<h3>User metadata updated</h3>';
+        if (!empty($report['usermeta'])) {
+            echo '<table class="widefat striped"><thead><tr><th>User ID</th><th>Meta key</th><th>User</th></tr></thead><tbody>';
+            foreach ($report['usermeta'] as $row) {
+                $user = get_user_by('id', $row['user_id']);
+                $username = $user ? $user->user_login : 'Unknown';
+                echo '<tr><td>'.intval($row['user_id']).'</td><td>'.esc_html($row['meta_key']).'</td><td>'.esc_html($username).'</td></tr>';
+            }
+            echo '</tbody></table>';
+        } else echo '<p>—</p>';
+
+        echo '<h3>Term metadata updated</h3>';
+        if (!empty($report['termmeta'])) {
+            echo '<table class="widefat striped"><thead><tr><th>Term ID</th><th>Meta key</th><th>Term</th></tr></thead><tbody>';
+            foreach ($report['termmeta'] as $row) {
+                $term = get_term($row['term_id']);
+                $term_name = $term && !is_wp_error($term) ? $term->name : 'Unknown';
+                echo '<tr><td>'.intval($row['term_id']).'</td><td>'.esc_html($row['meta_key']).'</td><td>'.esc_html($term_name).'</td></tr>';
+            }
+            echo '</tbody></table>';
+        } else echo '<p>—</p>';
+
+        echo '<h3>Comments updated</h3>';
+        if (!empty($report['comments'])) {
+            echo '<ul>';
+            foreach ($report['comments'] as $cid) {
+                $comment = get_comment($cid);
+                $author = $comment ? $comment->comment_author : 'Unknown';
+                $post_title = get_the_title($comment->comment_post_ID ?? 0);
+                echo '<li>#'.intval($cid).' — Comment by '.esc_html($author).' on "'.esc_html($post_title).'"</li>';
+            }
+            echo '</ul>';
+        } else echo '<p>—</p>';
+
+        echo '<h3>Custom tables updated</h3>';
+        if (!empty($report['custom_tables'])) {
+            echo '<table class="widefat striped"><thead><tr><th>Table</th><th>Column</th><th>Row ID</th></tr></thead><tbody>';
+            foreach ($report['custom_tables'] as $row) {
+                echo '<tr><td>'.esc_html($row['table']).'</td><td>'.esc_html($row['column']).'</td><td>'.esc_html($row['row_id']).'</td></tr>';
+            }
+            echo '</tbody></table>';
+            echo '<p><em>Note: Custom tables updated include e-commerce products, plugin galleries, and other JSON/serialized data.</em></p>';
         } else echo '<p>—</p>';
     }
 
@@ -478,11 +530,15 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
 
         // Store report
         $report_payload = [
-            'ts'        => current_time('mysql'),
-            'map_count' => count($map),
-            'posts'     => array_values(array_unique($report['posts'] ?? [])),
-            'postmeta'  => array_values($report['postmeta'] ?? []),
-            'options'   => array_values(array_unique($report['options'] ?? [])),
+            'ts'            => current_time('mysql'),
+            'map_count'     => count($map),
+            'posts'         => array_values(array_unique($report['posts'] ?? [])),
+            'postmeta'      => array_values($report['postmeta'] ?? []),
+            'options'       => array_values(array_unique($report['options'] ?? [])),
+            'usermeta'      => array_values($report['usermeta'] ?? []),
+            'termmeta'      => array_values($report['termmeta'] ?? []),
+            'comments'      => array_values(array_unique($report['comments'] ?? [])),
+            'custom_tables' => array_values($report['custom_tables'] ?? []),
         ];
         update_post_meta($att_id, self::REPORT_META, wp_json_encode($report_payload));
 
@@ -557,9 +613,13 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     /** Replace everywhere and collect a report of what changed */
     private function replace_everywhere(array $url_map): array {
         $report = [
-            'posts'    => [],
-            'postmeta' => [],
-            'options'  => [],
+            'posts'         => [],
+            'postmeta'      => [],
+            'options'       => [],
+            'usermeta'      => [],
+            'termmeta'      => [],
+            'comments'      => [],
+            'custom_tables' => [],
         ];
 
         // POSTS
@@ -598,6 +658,48 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             $report['options'][] = (string)$row->option_name;
         });
 
+        // USERMETA (user profile images, avatars, etc.)
+        $this->replace_in_table_serialized_with_report($url_map, 'usermeta', 'meta_value', function($row){
+            return function($new_value) use ($row){
+                return update_user_meta((int)$row->user_id, $row->meta_key, $new_value);
+            };
+        }, function($row) use (&$report){
+            $report['usermeta'][] = ['user_id' => (int)$row->user_id, 'meta_key' => (string)$row->meta_key];
+        });
+
+        // TERMMETA (category/tag images, taxonomy metadata)
+        $this->replace_in_table_serialized_with_report($url_map, 'termmeta', 'meta_value', function($row){
+            return function($new_value) use ($row){
+                return update_term_meta((int)$row->term_id, $row->meta_key, $new_value);
+            };
+        }, function($row) use (&$report){
+            $report['termmeta'][] = ['term_id' => (int)$row->term_id, 'meta_key' => (string)$row->meta_key];
+        });
+
+        // COMMENTS (image references in comment content)
+        foreach ($url_map as $old => $new) {
+            if ($old === $new) continue;
+            $like = '%' . $wpdb->esc_like($old) . '%';
+            $comment_ids = $wpdb->get_col($wpdb->prepare("SELECT comment_ID FROM {$wpdb->comments} WHERE comment_content LIKE %s", $like));
+            foreach ($comment_ids as $cid) {
+                $comment = get_comment($cid);
+                if (!$comment) continue;
+                $content = $comment->comment_content;
+                $new_content = str_replace($old, $new, $content);
+                if ($new_content !== $content) {
+                    wp_update_comment([
+                        'comment_ID' => $cid,
+                        'comment_content' => $new_content
+                    ]);
+                    $report['comments'][] = (int)$cid;
+                }
+            }
+        }
+
+        // ENHANCED: Search for JSON-encoded image references in any column
+        // This helps with modern plugins and e-commerce that store data as JSON
+        $this->replace_in_json_columns($url_map, $report);
+
         return $report;
     }
 
@@ -612,8 +714,17 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         }
         if (!$likes) return;
 
-        $table_name = $table === 'postmeta' ? $wpdb->postmeta : $wpdb->options;
-        $pk = $table === 'postmeta' ? 'meta_id' : 'option_id';
+        $table_name = $table === 'postmeta' ? $wpdb->postmeta : 
+                      ($table === 'options' ? $wpdb->options :
+                      ($table === 'usermeta' ? $wpdb->usermeta :
+                      ($table === 'termmeta' ? $wpdb->termmeta : null)));
+        
+        if (!$table_name) return; // Unknown table type
+        
+        $pk = $table === 'postmeta' ? 'meta_id' : 
+              ($table === 'options' ? 'option_id' :
+              ($table === 'usermeta' ? 'umeta_id' :
+              ($table === 'termmeta' ? 'meta_id' : 'id')));
         $sql = "SELECT * FROM {$table_name} WHERE " . implode(' OR ', $likes) . " LIMIT 5000";
         $rows = $wpdb->get_results($sql);
 
@@ -693,6 +804,92 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             if (is_dir($path)) $this->rrmdir($path); else @unlink($path);
         }
         return @rmdir($dir);
+    }
+
+    /**
+     * Enhanced JSON column search for modern plugins and e-commerce
+     * Searches for image URLs in JSON-encoded columns across custom tables
+     */
+    private function replace_in_json_columns(array $url_map, array &$report) {
+        global $wpdb;
+
+        // Get list of all custom tables (non-WordPress core)
+        $wp_tables = [
+            $wpdb->posts, $wpdb->postmeta, $wpdb->options, $wpdb->users, $wpdb->usermeta,
+            $wpdb->comments, $wpdb->commentmeta, $wpdb->terms, $wpdb->termmeta, $wpdb->term_relationships,
+            $wpdb->term_taxonomy, $wpdb->links
+        ];
+        
+        $all_tables = $wpdb->get_col("SHOW TABLES");
+        $custom_tables = array_diff($all_tables, $wp_tables);
+        
+        if (!$custom_tables) return; // No custom tables to check
+
+        // Initialize custom tables tracking in report
+        if (!isset($report['custom_tables'])) {
+            $report['custom_tables'] = [];
+        }
+
+        // Check each custom table for potential JSON columns containing image URLs
+        foreach (array_slice($custom_tables, 0, 10) as $table) { // Limit to 10 tables for performance
+            try {
+                // Get columns that might contain JSON data
+                $columns = $wpdb->get_results("DESCRIBE `$table`");
+                $json_candidates = [];
+                
+                foreach ($columns as $col) {
+                    $type = strtolower($col->Type);
+                    // Look for JSON, TEXT, LONGTEXT columns that might contain serialized/JSON data
+                    if (strpos($type, 'json') !== false || 
+                        strpos($type, 'text') !== false || 
+                        strpos($type, 'longtext') !== false) {
+                        $json_candidates[] = $col->Field;
+                    }
+                }
+                
+                if (!$json_candidates) continue;
+                
+                // Search for image URLs in these columns
+                foreach ($json_candidates as $column) {
+                    foreach (array_slice(array_keys($url_map), 0, 5) as $old_url) { // Limit URL checks
+                        $like = '%' . $wpdb->esc_like($old_url) . '%';
+                        $rows = $wpdb->get_results($wpdb->prepare(
+                            "SELECT * FROM `$table` WHERE `$column` LIKE %s LIMIT 100", 
+                            $like
+                        ));
+                        
+                        foreach ($rows as $row) {
+                            $raw_value = $row->{$column};
+                            if (!$raw_value) continue;
+                            
+                            // Try to decode as JSON first
+                            $decoded = json_decode($raw_value, true);
+                            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                                // Handle JSON data
+                                $new_decoded = $this->deep_replace($decoded, $url_map);
+                                if ($new_decoded !== $decoded) {
+                                    $new_json = wp_json_encode($new_decoded);
+                                    $wpdb->update($table, [$column => $new_json], ['id' => $row->id ?? $row->ID ?? null]);
+                                    $report['custom_tables'][] = ['table' => $table, 'column' => $column, 'row_id' => $row->id ?? $row->ID ?? 'unknown'];
+                                }
+                            } else {
+                                // Handle as serialized WordPress data
+                                $unserialized = maybe_unserialize($raw_value);
+                                $new_unserialized = $this->deep_replace($unserialized, $url_map);
+                                if ($new_unserialized !== $unserialized) {
+                                    $new_serialized = maybe_serialize($new_unserialized);
+                                    $wpdb->update($table, [$column => $new_serialized], ['id' => $row->id ?? $row->ID ?? null]);
+                                    $report['custom_tables'][] = ['table' => $table, 'column' => $column, 'row_id' => $row->id ?? $row->ID ?? 'unknown'];
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                // Skip tables that cause errors (permissions, structure issues, etc.)
+                continue;
+            }
+        }
     }
 }
 
