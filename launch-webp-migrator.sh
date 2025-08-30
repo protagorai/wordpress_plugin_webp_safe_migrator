@@ -40,10 +40,41 @@ echo ""
 echo "Starting WebP Safe Migrator deployment..."
 echo ""
 
+# Check if resources are pre-downloaded for faster setup
+echo -e "${BLUE}🔍 Checking for pre-downloaded resources...${NC}"
+FAST_SETUP=false
+
+if podman images docker.io/library/wordpress:latest --format "{{.Repository}}" 2>/dev/null | grep -q wordpress; then
+    if podman images docker.io/library/mysql:8.0 --format "{{.Repository}}" 2>/dev/null | grep -q mysql; then
+        if podman images docker.io/library/phpmyadmin:latest --format "{{.Repository}}" 2>/dev/null | grep -q phpmyadmin; then
+            echo -e "${GREEN}⚡ All Docker images already downloaded - enabling FAST SETUP mode!${NC}"
+            FAST_SETUP=true
+        fi
+    fi
+fi
+
+if [[ "$FAST_SETUP" == "false" ]]; then
+    echo -e "${YELLOW}⚠️  Docker images not pre-downloaded - setup will be slower${NC}"
+    echo -e "${CYAN}💡 TIP: Run './pre-download-resources.sh' first for faster setups${NC}"
+    echo ""
+    read -p "Download resources now for faster setup? (Y/N): " predownload
+    if [[ "$predownload" =~ ^[Yy]$ ]]; then
+        echo ""
+        echo -e "${BLUE}🚀 Running pre-download process...${NC}"
+        ./pre-download-resources.sh
+        echo ""
+        echo -e "${GREEN}📋 Pre-download completed, continuing with fast setup...${NC}"
+        FAST_SETUP=true
+    else
+        echo -e "${CYAN}📊 Continuing with standard setup (will download during container start)${NC}"
+    fi
+fi
+echo ""
+
 # Clean up existing containers first
 echo "Cleaning up existing containers..."
-podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin webp-migrator-wpcli 2>/dev/null || true
-podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin webp-migrator-wpcli 2>/dev/null || true
+podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin 2>/dev/null || true
+podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin 2>/dev/null || true
 podman network rm webp-migrator-net 2>/dev/null || true
 
 echo -e "${GREEN}✓ Cleanup completed${NC}"
@@ -61,7 +92,11 @@ echo -e "${GREEN}✓ Network created${NC}"
 echo ""
 
 # Start MySQL
-echo "Starting MySQL database..."
+if [[ "$FAST_SETUP" == "true" ]]; then
+    echo -e "${GREEN}⚡ Starting MySQL database (using pre-downloaded image)...${NC}"
+else
+    echo -e "${CYAN}⠋ Starting MySQL database (downloading if needed)...${NC}"
+fi
 podman run -d \
     --name webp-migrator-mysql \
     --network webp-migrator-net \
@@ -102,7 +137,11 @@ echo -e "${GREEN}✓ MySQL is ready!${NC}"
 echo ""
 
 # Start WordPress
-echo "Starting WordPress..."
+if [[ "$FAST_SETUP" == "true" ]]; then
+    echo -e "${GREEN}⚡ Starting WordPress (using pre-downloaded image)...${NC}"
+else
+    echo -e "${CYAN}⠙ Starting WordPress (downloading if needed)...${NC}"
+fi
 podman run -d \
     --name webp-migrator-wordpress \
     --network webp-migrator-net \
@@ -124,7 +163,11 @@ echo -e "${GREEN}✓ WordPress container started${NC}"
 echo ""
 
 # Start phpMyAdmin
-echo "Starting phpMyAdmin..."
+if [[ "$FAST_SETUP" == "true" ]]; then
+    echo -e "${GREEN}⚡ Starting phpMyAdmin (using pre-downloaded image)...${NC}"
+else
+    echo -e "${CYAN}⠹ Starting phpMyAdmin (downloading if needed)...${NC}"
+fi
 podman run -d \
     --name webp-migrator-phpmyadmin \
     --network webp-migrator-net \
@@ -246,7 +289,16 @@ podman exec webp-migrator-wordpress apache2ctl graceful 2>/dev/null
 
 # Install WP-CLI in WordPress container
 echo "Installing WP-CLI in WordPress container..."
-podman exec webp-migrator-wordpress bash -c "curl -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp" 2>/dev/null
+if [[ -f "temp_wpcli.phar" ]]; then
+    echo "* Using pre-downloaded WP-CLI for faster setup..."
+    podman cp temp_wpcli.phar webp-migrator-wordpress:/tmp/wp-cli.phar
+    podman exec webp-migrator-wordpress bash -c "chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp"
+    echo -e "${GREEN}⚡ WP-CLI installed from pre-downloaded file${NC}"
+else
+    echo "* Downloading WP-CLI during setup..."
+    podman exec webp-migrator-wordpress bash -c "curl -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp" 2>/dev/null
+    echo -e "${GREEN}* WP-CLI downloaded and installed${NC}"
+fi
 
 echo ""
 
@@ -365,3 +417,6 @@ echo "  ./status-webp-migrator.sh        - Show status"
 echo "  ./manage-wp.sh                   - WordPress management commands"
 echo ""
 echo "Script completed successfully!"
+echo ""
+echo "Press Enter to close this window..."
+read -p ""

@@ -42,10 +42,44 @@ echo.
 echo Starting WebP Safe Migrator deployment...
 echo.
 
+REM Check if resources are pre-downloaded for faster setup
+echo 🔍 Checking for pre-downloaded resources...
+set FAST_SETUP=false
+
+podman images docker.io/library/wordpress:latest --format "{{.Repository}}" 2>nul | findstr wordpress >nul
+if not errorlevel 1 (
+    podman images docker.io/library/mysql:8.0 --format "{{.Repository}}" 2>nul | findstr mysql >nul
+    if not errorlevel 1 (
+        podman images docker.io/library/phpmyadmin:latest --format "{{.Repository}}" 2>nul | findstr phpmyadmin >nul
+        if not errorlevel 1 (
+            echo ⚡ All Docker images already downloaded - enabling FAST SETUP mode!
+            set FAST_SETUP=true
+        )
+    )
+)
+
+if "%FAST_SETUP%"=="false" (
+    echo ⚠️  Docker images not pre-downloaded - setup will be slower
+    echo 💡 TIP: Run 'pre-download-resources.bat' first for faster setups
+    echo.
+    set /p predownload="Download resources now for faster setup? (Y/N): "
+    if /i "!predownload!"=="Y" (
+        echo.
+        echo 🚀 Running pre-download process...
+        call pre-download-resources.bat
+        echo.
+        echo 📋 Pre-download completed, continuing with fast setup...
+        set FAST_SETUP=true
+    ) else (
+        echo 📊 Continuing with standard setup (will download during container start)
+    )
+)
+echo.
+
 REM Clean up existing containers first
 echo Cleaning up existing containers...
-podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin webp-migrator-wpcli 2>nul
-podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin webp-migrator-wpcli 2>nul
+podman stop webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin 2>nul
+podman rm -f webp-migrator-wordpress webp-migrator-mysql webp-migrator-phpmyadmin 2>nul
 podman network rm webp-migrator-net 2>nul
 
 echo * Cleanup completed
@@ -66,7 +100,11 @@ echo * Network created
 echo.
 
 REM Start MySQL
-echo Starting MySQL database...
+if "%FAST_SETUP%"=="true" (
+    echo ⚡ Starting MySQL database (using pre-downloaded image)...
+) else (
+    echo ⠋ Starting MySQL database (downloading if needed)...
+)
 echo * Database: %DB_NAME%
 echo * WordPress user: %DB_WP_USER%
 echo * Port: %DB_PORT%
@@ -98,8 +136,8 @@ if errorlevel 1 (
             echo.
             podman logs webp-migrator-mysql --tail=10
             echo.
-            echo Press any key to copy this MySQL error output, then press a key to exit...
-            pause
+            echo Press any key to copy this MySQL error output, then press Enter to exit...
+            pause >nul
             exit /b 1
         )
 )
@@ -108,7 +146,11 @@ echo * MySQL is ready!
 echo.
 
 REM Start WordPress
-echo Starting WordPress...
+if "%FAST_SETUP%"=="true" (
+    echo ⚡ Starting WordPress (using pre-downloaded image)...
+) else (
+    echo ⠙ Starting WordPress (downloading if needed)...
+)
 echo * WordPress port: %WP_PORT%
 echo * Site URL: %WP_SITE_URL%
 podman run -d --name webp-migrator-wordpress --network webp-migrator-net -p %WP_PORT%:80 -e WORDPRESS_DB_HOST=webp-migrator-mysql -e WORDPRESS_DB_USER=%DB_WP_USER% -e WORDPRESS_DB_PASSWORD=%DB_WP_PASS% -e WORDPRESS_DB_NAME=%DB_NAME% -e WORDPRESS_DEBUG=1 -v "%CD%\src:/var/www/html/wp-content/plugins/webp-safe-migrator" docker.io/library/wordpress:latest
@@ -127,7 +169,11 @@ echo * WordPress container started
 echo.
 
 REM Start phpMyAdmin
-echo Starting phpMyAdmin...
+if "%FAST_SETUP%"=="true" (
+    echo ⚡ Starting phpMyAdmin (using pre-downloaded image)...
+) else (
+    echo ⠹ Starting phpMyAdmin (downloading if needed)...
+)
 echo * phpMyAdmin port: %PMA_PORT%
 podman run -d --name webp-migrator-phpmyadmin --network webp-migrator-net -p %PMA_PORT%:80 -e PMA_HOST=webp-migrator-mysql -e PMA_USER=root -e PMA_PASSWORD=%DB_ROOT_PASS% docker.io/library/phpmyadmin:latest
 
@@ -197,7 +243,7 @@ if errorlevel 1 (
         echo   3. Network connectivity between containers
         echo.
         echo Press any key to copy this database error output and fix the issue...
-        pause
+        pause >nul
         echo Continuing anyway, but WordPress installation will likely fail...
         echo.
     ) else (
@@ -256,13 +302,17 @@ echo   1. Check container logs: podman logs webp-migrator-wordpress
 echo   2. Check database connectivity from above diagnostics
 echo   3. Try accessing http://localhost:%WP_PORT% manually in browser
 echo.
-echo Press any key to copy this diagnostic output, or press Enter to continue...
-choice /c YN /n /m "Continue anyway? (Y/N): "
-if errorlevel 2 (
+echo Press any key to copy this diagnostic output...
+pause >nul
+echo.
+set /p continue="Continue anyway? (Y/N): "
+if /i "%continue%"=="N" (
     echo Installation cancelled by user
-    pause
+    echo Press any key to exit...
+    pause >nul
     exit /b 1
 )
+echo Continuing with WordPress installation...
 
 :wordpress_ready
 echo * WordPress connection testing completed
@@ -278,7 +328,16 @@ echo Restarting Apache to apply PHP configuration...
 podman exec webp-migrator-wordpress apache2ctl graceful 2>nul
 
 echo ⠴ Installing WP-CLI in WordPress container...
-podman exec webp-migrator-wordpress bash -c "curl -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp" 2>nul
+if exist "temp_wpcli.phar" (
+    echo * Using pre-downloaded WP-CLI for faster setup...
+    podman cp temp_wpcli.phar webp-migrator-wordpress:/tmp/wp-cli.phar
+    podman exec webp-migrator-wordpress bash -c "chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp"
+    echo ⚡ WP-CLI installed from pre-downloaded file
+) else (
+    echo * Downloading WP-CLI during setup...
+    podman exec webp-migrator-wordpress bash -c "curl -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp" 2>nul
+    echo * WP-CLI downloaded and installed
+)
 
 echo.
 
@@ -426,3 +485,6 @@ echo Password: %WP_ADMIN_PASS%
 echo ==========================================
 echo.
 echo Script completed successfully!
+echo.
+echo Press any key to close this window...
+pause >nul
