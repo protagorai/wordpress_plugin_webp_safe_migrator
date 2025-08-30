@@ -3,7 +3,8 @@
  * Plugin Name: WebP Safe Migrator
  * Description: Convert non-WebP media to WebP at a fixed quality, update all usages & metadata safely, then (optionally) remove originals after validation. Includes WP-CLI, skip rules, and change reports.
  * Version:     0.2.0
- * Author:      Your Name
+ * Author:      Okvir Platforma
+ * Author URI:  mailto:okvir.platforma@gmail.com
  * License:     GPLv2 or later
  */
 
