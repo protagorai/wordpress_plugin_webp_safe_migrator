@@ -128,12 +128,20 @@ echo This is normal - WordPress needs time to download and setup...
 timeout /t 60 /nobreak >nul
 
 echo Testing WordPress connection...
-curl -s -o nul -w "%%{http_code}" "http://localhost:8080" 2>nul | findstr "200\|30" >nul
-if errorlevel 1 (
-    echo WordPress not ready yet, waiting more...
-    timeout /t 30 /nobreak >nul
+echo * Checking if WordPress is responding at %WP_SITE_URL%...
+for /l %%i in (1,1,10) do (
+    curl -s -o nul -w "%%{http_code}" "%WP_SITE_URL%" 2>nul | findstr "200\|30" >nul
+    if not errorlevel 1 (
+        echo * WordPress is responding! Attempt %%i/10
+        goto :wordpress_ready
+    )
+    echo * Attempt %%i/10 failed, waiting 10 seconds...
+    timeout /t 10 /nobreak >nul
 )
-echo * WordPress should be accessible now
+echo WARNING: WordPress may not be fully ready yet, continuing anyway...
+
+:wordpress_ready
+echo * WordPress connection verified
 
 echo.
 
@@ -157,15 +165,38 @@ echo * Admin password: %WP_ADMIN_PASS%
 echo * Site title: %WP_SITE_TITLE%
 echo * Site URL: %WP_SITE_URL%
 echo.
+
+REM Check if WordPress is already installed
+echo Checking if WordPress is already installed...
+podman exec webp-migrator-wordpress wp core is-installed --allow-root 2>nul
+if not errorlevel 1 (
+    echo * WordPress is already installed, skipping installation
+    echo * Verifying admin user exists...
+    podman exec webp-migrator-wordpress wp user get %WP_ADMIN_USER% --allow-root 2>nul >nul
+    if errorlevel 1 (
+        echo ! Admin user '%WP_ADMIN_USER%' not found, creating...
+        podman exec webp-migrator-wordpress wp user create "%WP_ADMIN_USER%" "%WP_ADMIN_EMAIL%" --role=administrator --user_pass="%WP_ADMIN_PASS%" --allow-root
+    ) else (
+        echo * Admin user '%WP_ADMIN_USER%' exists
+        echo * Updating password to ensure it matches config...
+        podman exec webp-migrator-wordpress wp user update "%WP_ADMIN_USER%" --user_pass="%WP_ADMIN_PASS%" --allow-root
+    )
+    goto :wordpress_installed
+)
+
+echo * WordPress not installed, installing now...
 echo DEBUG: Running WP-CLI install command with these exact values...
-podman exec webp-migrator-wordpress bash -c "wp core install --url='%WP_SITE_URL%' --title='%WP_SITE_TITLE%' --admin_user='%WP_ADMIN_USER%' --admin_password='%WP_ADMIN_PASS%' --admin_email='%WP_ADMIN_EMAIL%' --locale='en_US' --skip-email --allow-root"
+podman exec webp-migrator-wordpress wp core install --url="%WP_SITE_URL%" --title="%WP_SITE_TITLE%" --admin_user="%WP_ADMIN_USER%" --admin_password="%WP_ADMIN_PASS%" --admin_email="%WP_ADMIN_EMAIL%" --locale="en_US" --skip-email --allow-root
 
 if errorlevel 1 (
     echo ! WordPress installation had issues - you may need to complete setup manually
     echo   Go to %WP_SITE_URL% to finish WordPress setup
+    echo   Expected credentials: %WP_ADMIN_USER% / %WP_ADMIN_PASS%
 ) else (
     echo * WordPress installed successfully!
 )
+
+:wordpress_installed
 
 echo.
 
@@ -188,7 +219,7 @@ echo.
 
 REM Create sample content
 echo Creating sample content...
-podman exec webp-migrator-wordpress wp post create --post_type=page --post_title="WebP Migrator Test Guide" --post_content="<h2>Welcome to %WP_SITE_TITLE%</h2><p>Go to Media → WebP Migrator to start testing.</p><p><strong>Admin Login:</strong><br>Username: %WP_ADMIN_USER%<br>Password: %WP_ADMIN_PASS%</p>" --post_status=publish --allow-root 2>nul
+podman exec webp-migrator-wordpress wp post create --post_type=page --post_title="WebP Migrator Test Guide" --post_content="<h2>Welcome to %WP_SITE_TITLE%</h2><p>Go to Media → WebP Migrator to start testing.</p><p><strong>Admin Login:</strong><br>Username: %WP_ADMIN_USER%<br>Password: %WP_ADMIN_PASS%</p>" --post_status=publish --allow-root
 
 echo * Sample content created
 

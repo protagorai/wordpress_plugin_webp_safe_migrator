@@ -173,7 +173,7 @@ if podman exec webp-migrator-wordpress wp core install \
     --url="http://localhost:8080" \
     --title="WebP Migrator Test Site" \
     --admin_user="admin" \
-    --admin_password="admin123!" \
+    --admin_password="admin123" \
     --admin_email="admin@webp-test.local" \
     --locale="en_US" \
     --skip-email \
@@ -223,7 +223,7 @@ echo -e "${CYAN}✓ phpMyAdmin: http://localhost:8081${NC}"
 echo ""
 echo "WordPress Credentials:"
 echo "  Username: admin"
-echo "  Password: admin123!"
+echo "  Password: admin123"
 echo ""
 echo "Database Credentials:"
 echo "  Database: wordpress_webp_test"

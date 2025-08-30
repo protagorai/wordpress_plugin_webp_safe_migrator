@@ -362,31 +362,30 @@ action_install() {
         sleep 2
     done
     
-    # Install WordPress
-    log_info "Installing WordPress core..."
+    # Use the auto-installation script for consistent setup
+    log_info "Running WordPress auto-installation..."
+    
     local wp_url="http://$CUSTOM_DOMAIN"
     if [[ "$USE_STANDARD_PORTS" == "false" ]]; then
         wp_url="http://$CUSTOM_DOMAIN:8080"
     fi
     
-    $compose_cmd exec -T wpcli wp core install \
-        --url="$wp_url" \
-        --title="WebP Migrator Development Site" \
-        --admin_user="admin" \
-        --admin_password="admin123!" \
-        --admin_email="admin@$CUSTOM_DOMAIN" \
-        --skip-email
+    # Set environment variables for the auto-install script
+    export WP_ADMIN_USER="admin"
+    export WP_ADMIN_PASS="admin123"
+    export WP_ADMIN_EMAIL="admin@$CUSTOM_DOMAIN"
+    export WP_SITE_TITLE="WebP Migrator Development Site"
+    export WP_SITE_URL="$wp_url"
+    export CONTAINER_ENGINE="$CONTAINER_ENGINE"
+    export COMPOSE_FILE="$(get_compose_file)"
     
-    # Activate plugin
-    log_info "Activating WebP Safe Migrator plugin..."
-    $compose_cmd exec -T wpcli wp plugin activate webp-safe-migrator
-    
-    log_success "WordPress and plugin installed successfully!"
-    echo ""
-    log_header "Login Credentials"
-    echo "  Username: admin"
-    echo "  Password: admin123!"
-    echo ""
+    # Run the auto-installation script
+    if [[ -x "./wp-auto-install.sh" ]]; then
+        ./wp-auto-install.sh
+    else
+        log_error "WordPress auto-installation script not found or not executable"
+        exit 1
+    fi
 }
 
 action_down() {

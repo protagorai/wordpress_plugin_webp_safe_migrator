@@ -34,7 +34,14 @@ services:
       - ./ssl-certs:/etc/ssl/certs/webp-migrator
       - ./logs:/var/log/webp-migrator
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped
 
   db:
@@ -51,6 +58,12 @@ services:
     ports:
       - "3306:3306"
     command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   phpmyadmin:
@@ -78,9 +91,17 @@ services:
       WORDPRESS_DB_USER: wordpress
       WORDPRESS_DB_PASSWORD: wordpress123
       WORDPRESS_DB_NAME: wordpress_webp_test
+      # WordPress admin credentials for automated installation
+      WP_ADMIN_USER: admin
+      WP_ADMIN_PASS: admin123
+      WP_ADMIN_EMAIL: admin@webp-test.local
+      WP_SITE_TITLE: "WebP Migrator Test Site"
+      WP_SITE_URL: "http://localhost"
     depends_on:
-      - db
-      - wordpress
+      db:
+        condition: service_healthy
+      wordpress:
+        condition: service_healthy
     command: tail -f /dev/null  # Keep container running
     restart: unless-stopped
 
