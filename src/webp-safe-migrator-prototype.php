@@ -207,10 +207,11 @@ class WebP_Safe_Migrator {
         global $wpdb;
         $mimes = ['image/jpeg','image/png','image/gif'];
         $in = implode(',', array_fill(0, count($mimes), '%s'));
+        $prepare_args = array_merge($mimes, [(int)$limit]);
         $sql = $wpdb->prepare(
             "SELECT ID FROM {$wpdb->posts} WHERE post_type='attachment' AND post_mime_type IN ($in)
              ORDER BY ID ASC LIMIT %d",
-             ...$mimes, (int)$limit
+             ...$prepare_args
         );
         return $wpdb->get_col($sql);
     }
