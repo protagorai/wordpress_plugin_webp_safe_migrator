@@ -15,6 +15,20 @@ Convert all non-WebP images in your WordPress media library to WebP at a fixed q
 
 ## 🚀 Quick Start
 
+### **Option 1: One-Command Launch (Recommended)**
+```bash
+# Windows
+.\launch-webp-migrator.bat
+
+# Linux/macOS
+./launch-webp-migrator.sh
+
+# Universal (auto-detects platform)
+./launch-universal.sh
+```
+**Result**: Complete WordPress + Plugin environment ready in 2-3 minutes at http://localhost:8080
+
+### **Option 2: Manual Installation**
 1. **Install Plugin**: Create `wp-content/plugins/webp-safe-migrator/` and copy plugin files
 2. **Activate**: Go to **WP Admin → Plugins** and activate
 3. **Configure**: Visit **Media → WebP Migrator** to set quality, batch size, and validation mode
@@ -227,7 +241,8 @@ wp webp-migrator stats
 ## 📚 Documentation
 
 ### Quick Operations
-- **[🎛️ Operations Index](setup/OPERATIONS_INDEX.md)** - **← START HERE** - Quick navigation to common tasks
+- **[🚀 Launcher Scripts Guide](documentation/LAUNCHER_SCRIPTS.md)** - **← EASIEST START** - Simple deployment scripts
+- **[🎛️ Operations Index](setup/OPERATIONS_INDEX.md)** - Complete task navigation  
 - **[🎯 Command Cheat Sheet](setup/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
 - **[⚙️ Configuration Examples](setup/CONFIG_EXAMPLES.md)** - Customize usernames, passwords, domains, ports
 - **[🛑 Graceful Shutdown Guide](setup/GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
@@ -329,13 +344,12 @@ GPL-2.0+ (GNU General Public License v2.0 or later) - Compatible with WordPress 
 ---
 
 **🔗 Quick Navigation:**
+[🚀 Launcher](documentation/LAUNCHER_SCRIPTS.md) | 
 [🎛️ Operations](setup/OPERATIONS_INDEX.md) | 
 [🎯 Commands](setup/COMMAND_CHEAT_SHEET.md) |
 [⚙️ Config](setup/CONFIG_EXAMPLES.md) |
 [🛑 Shutdown](setup/GRACEFUL_SHUTDOWN.md) | 
 [📖 Full Docs](documentation/INDEX.md) | 
-[🏗️ Architecture](documentation/ARCHITECTURE.md) | 
-[🔧 Setup](setup/) | 
 [🧪 Tests](tests/)
 
 **📅 Last Updated:** January 27, 2025 | **📋 Version:** 2.0

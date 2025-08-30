@@ -22,7 +22,8 @@
 ### 🔧 Development & Testing
 
 #### Quick Operations
-- **[🎛️ Operations Index](../setup/OPERATIONS_INDEX.md)** - **← START HERE** - Quick navigation to common tasks
+- **[🚀 Launcher Scripts Guide](LAUNCHER_SCRIPTS.md)** - **← EASIEST START** - Simple deployment scripts
+- **[🎛️ Operations Index](../setup/OPERATIONS_INDEX.md)** - Complete task navigation
 - **[🎯 Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
 - **[⚙️ Configuration Examples](../setup/CONFIG_EXAMPLES.md)** - Copy-paste examples for common customizations
 - **[🛑 Graceful Shutdown Guide](../setup/GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
@@ -62,12 +63,13 @@
 ## Navigation Guide
 
 ### For Users
-1. Start with **[Operations Index](../setup/OPERATIONS_INDEX.md)** for quick task navigation
-2. **Customize setup** with **[Configuration Examples](../setup/CONFIG_EXAMPLES.md)** (usernames, passwords, domains)
-3. Use **[Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** for daily operations
-4. Read **[Main README](../README.md)** for installation and basic usage
-5. Review **[Architecture Overview](ARCHITECTURE.md)** for understanding system behavior
-6. Check **[Visual Diagrams](diagrams/)** for process flow comprehension
+1. **Get started immediately** with **[Launcher Scripts](LAUNCHER_SCRIPTS.md)** (one-command deployment)
+2. **Navigate tasks** with **[Operations Index](../setup/OPERATIONS_INDEX.md)** for specific operations
+3. **Customize setup** with **[Configuration Examples](../setup/CONFIG_EXAMPLES.md)** (usernames, passwords, domains)
+4. Use **[Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md)** for daily operations
+5. Read **[Main README](../README.md)** for installation and basic usage
+6. Review **[Architecture Overview](ARCHITECTURE.md)** for understanding system behavior
+7. Check **[Visual Diagrams](diagrams/)** for process flow comprehension
 
 ### For Developers
 1. Read **[Comprehensive Review](COMPREHENSIVE_REVIEW_SUMMARY.md)** for complete analysis
@@ -85,6 +87,7 @@
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
+| [🚀 Launcher Scripts](LAUNCHER_SCRIPTS.md) | Simple deployment scripts | **Everyone** |
 | [🎛️ Operations Index](../setup/OPERATIONS_INDEX.md) | Quick task navigation | **Everyone** |
 | [🎯 Command Cheat Sheet](../setup/COMMAND_CHEAT_SHEET.md) | Daily commands reference | **Everyone** |
 | [⚙️ Configuration Examples](../setup/CONFIG_EXAMPLES.md) | Quick customization examples | **Everyone** |
