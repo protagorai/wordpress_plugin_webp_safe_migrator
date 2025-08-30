@@ -127,21 +127,70 @@ echo Waiting for WordPress to be ready (60 seconds)...
 echo This is normal - WordPress needs time to download and setup...
 timeout /t 60 /nobreak >nul
 
-echo Testing WordPress connection...
-echo * Checking if WordPress is responding at %WP_SITE_URL%...
-for /l %%i in (1,1,10) do (
-    curl -s -o nul -w "%%{http_code}" "%WP_SITE_URL%" 2>nul | findstr "200\|30" >nul
-    if not errorlevel 1 (
-        echo * WordPress is responding! Attempt %%i/10
-        goto :wordpress_ready
-    )
-    echo * Attempt %%i/10 failed, waiting 10 seconds...
-    timeout /t 10 /nobreak >nul
+echo Testing WordPress connection with detailed diagnostics...
+echo * Site URL: %WP_SITE_URL%
+echo * Expected response: 200 or 30x redirect codes
+echo.
+
+REM First, check if the container is actually running
+echo [DIAGNOSTIC] Checking container status...
+podman ps --filter "name=webp-migrator-wordpress" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+REM Check if port 8080 is accessible
+echo [DIAGNOSTIC] Testing port accessibility...
+netstat -an | findstr ":8080" >nul
+if errorlevel 1 (
+    echo ! WARNING: Port 8080 not found in netstat - container port binding may have failed
+) else (
+    echo * Port 8080 is bound and listening
 )
-echo WARNING: WordPress may not be fully ready yet, continuing anyway...
+
+echo.
+echo [DIAGNOSTIC] Checking WordPress container logs for errors...
+podman logs webp-migrator-wordpress --tail=20 2>nul || echo ! Could not retrieve container logs
+
+echo.
+echo [DIAGNOSTIC] Testing database connectivity from WordPress container...
+podman exec webp-migrator-wordpress mysql -h webp-migrator-mysql -u wordpress -pwordpress123 -e "SELECT 'Database connection: OK';" 2>nul || echo ! Database connection failed
+
+echo.
+echo [CONNECTION TEST] Testing WordPress response...
+for /l %%i in (1,1,10) do (
+    echo * Attempt %%i/10: Testing %WP_SITE_URL%
+    
+    REM Get detailed response information
+    for /f "tokens=*" %%a in ('curl -s -o nul -w "HTTP_CODE:%%{http_code} TIME:%%{time_total}s SIZE:%%{size_download}bytes" "%WP_SITE_URL%" 2^>nul') do (
+        echo   Response: %%a
+        echo %%a | findstr "HTTP_CODE:200\|HTTP_CODE:302\|HTTP_CODE:301\|HTTP_CODE:303" >nul
+        if not errorlevel 1 (
+            echo * SUCCESS: WordPress is responding! %%a
+            goto :wordpress_ready
+        )
+    )
+    
+    REM If response was not 200/30x, show what we got
+    for /f "tokens=*" %%b in ('curl -s -w "%%{http_code}" "%WP_SITE_URL%" 2^>nul') do (
+        if not "%%b"=="000" (
+            echo   Got HTTP %%b instead of 200/30x
+        ) else (
+            echo   Connection refused or timeout
+        )
+    )
+    
+    if %%i lss 10 (
+        echo   Waiting 10 seconds before retry...
+        timeout /t 10 /nobreak >nul
+    )
+)
+
+echo.
+echo [FINAL DIAGNOSTIC] After 10 failed attempts, showing detailed status:
+podman exec webp-migrator-wordpress ps aux | findstr apache 2>nul || echo ! Apache processes not found
+podman exec webp-migrator-wordpress ls -la /var/www/html/ | head -5 2>nul || echo ! WordPress files not accessible
+echo ! WARNING: WordPress failed to respond after 10 attempts - proceeding with installation anyway
 
 :wordpress_ready
-echo * WordPress connection verified
+echo * WordPress connection testing completed
 
 echo.
 

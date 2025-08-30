@@ -176,28 +176,6 @@ services:
       - {self.config['networking']['container_network']}
 """
 
-        # Add WP-CLI container
-        compose_content += f"""
-  wpcli:
-    image: wordpress:cli
-    container_name: webp-migrator-wpcli
-    volumes:
-      - wordpress_data:/var/www/html
-      - ../src:/var/www/html/wp-content/plugins/webp-safe-migrator
-    environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_USER: {db_config['wordpress_user']['username']}
-      WORDPRESS_DB_PASSWORD: {db_config['wordpress_user']['password']}
-      WORDPRESS_DB_NAME: {db_config['name']}
-    depends_on:
-      - db
-      - wordpress
-    command: tail -f /dev/null  # Keep container running
-    restart: unless-stopped
-    networks:
-      - {self.config['networking']['container_network']}
-"""
-
         # Add Redis if enabled
         if services_config.get('redis', {}).get('enabled', False):
             compose_content += f"""

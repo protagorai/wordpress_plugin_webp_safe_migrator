@@ -145,12 +145,76 @@ echo "Waiting for WordPress to be ready (60 seconds)..."
 echo "This is normal - WordPress needs time to download and setup..."
 sleep 60
 
-echo "Testing WordPress connection..."
-if ! curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080" | grep -q "200\|30"; then
-    echo "WordPress not ready yet, waiting more..."
-    sleep 30
+echo "Testing WordPress connection with detailed diagnostics..."
+echo "* Site URL: http://localhost:8080"
+echo "* Expected response: 200 or 30x redirect codes"
+echo ""
+
+# First, check if the container is actually running
+echo -e "${CYAN}[DIAGNOSTIC]${NC} Checking container status..."
+podman ps --filter "name=webp-migrator-wordpress" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# Check if port 8080 is accessible
+echo -e "${CYAN}[DIAGNOSTIC]${NC} Testing port accessibility..."
+if ! netstat -an | grep -q ":8080"; then
+    echo -e "${YELLOW}! WARNING: Port 8080 not found in netstat - container port binding may have failed${NC}"
+else
+    echo -e "${GREEN}* Port 8080 is bound and listening${NC}"
 fi
-echo -e "${GREEN}✓ WordPress should be accessible now${NC}"
+
+echo ""
+echo -e "${CYAN}[DIAGNOSTIC]${NC} Checking WordPress container logs for errors..."
+podman logs webp-migrator-wordpress --tail=20 2>/dev/null || echo -e "${YELLOW}! Could not retrieve container logs${NC}"
+
+echo ""
+echo -e "${CYAN}[DIAGNOSTIC]${NC} Testing database connectivity from WordPress container..."
+if podman exec webp-migrator-wordpress mysql -h webp-migrator-mysql -u wordpress -pwordpress123 -e "SELECT 'Database connection: OK';" 2>/dev/null; then
+    echo -e "${GREEN}* Database connection successful${NC}"
+else
+    echo -e "${RED}! Database connection failed${NC}"
+fi
+
+echo ""
+echo -e "${CYAN}[CONNECTION TEST]${NC} Testing WordPress response..."
+for i in {1..10}; do
+    echo "* Attempt $i/10: Testing http://localhost:8080"
+    
+    # Get detailed response information
+    response=$(curl -s -o /dev/null -w "HTTP_CODE:%{http_code} TIME:%{time_total}s SIZE:%{size_download}bytes" "http://localhost:8080" 2>/dev/null)
+    echo "  Response: $response"
+    
+    if echo "$response" | grep -q "HTTP_CODE:200\|HTTP_CODE:30"; then
+        echo -e "${GREEN}* SUCCESS: WordPress is responding! $response${NC}"
+        break
+    fi
+    
+    # Show what HTTP code we got
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080" 2>/dev/null)
+    if [[ "$http_code" != "000" ]]; then
+        echo -e "${YELLOW}  Got HTTP $http_code instead of 200/30x${NC}"
+    else
+        echo -e "${RED}  Connection refused or timeout${NC}"
+    fi
+    
+    if [[ $i -lt 10 ]]; then
+        echo "  Waiting 10 seconds before retry..."
+        sleep 10
+    fi
+done
+
+echo ""
+echo -e "${CYAN}[FINAL DIAGNOSTIC]${NC} After 10 attempts, showing detailed status:"
+if ! podman exec webp-migrator-wordpress ps aux | grep -q apache; then
+    echo -e "${RED}! Apache processes not found in container${NC}"
+else
+    echo -e "${GREEN}* Apache processes running${NC}"
+fi
+
+if ! podman exec webp-migrator-wordpress ls -la /var/www/html/ 2>/dev/null | head -5; then
+    echo -e "${RED}! WordPress files not accessible${NC}"
+fi
+
+echo -e "${GREEN}✓ WordPress connection testing completed${NC}"
 
 echo ""
 

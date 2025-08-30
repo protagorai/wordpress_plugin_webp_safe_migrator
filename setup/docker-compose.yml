@@ -79,31 +79,6 @@ services:
       - db
     restart: unless-stopped
 
-  wpcli:
-    image: wordpress:cli
-    container_name: webp-migrator-wpcli
-    volumes:
-      - wordpress_data:/var/www/html
-      - ../src:/var/www/html/wp-content/plugins/webp-safe-migrator
-    environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress123
-      WORDPRESS_DB_NAME: wordpress_webp_test
-      # WordPress admin credentials for automated installation
-      WP_ADMIN_USER: admin
-      WP_ADMIN_PASS: admin123
-      WP_ADMIN_EMAIL: admin@webp-test.local
-      WP_SITE_TITLE: "WebP Migrator Test Site"
-      WP_SITE_URL: "http://localhost"
-    depends_on:
-      db:
-        condition: service_healthy
-      wordpress:
-        condition: service_healthy
-    command: tail -f /dev/null  # Keep container running
-    restart: unless-stopped
-
 volumes:
   wordpress_data:
   db_data:

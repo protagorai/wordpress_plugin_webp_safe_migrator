@@ -86,25 +86,6 @@ services:
     networks:
       - webp-migrator-net
 
-  wpcli:
-    image: wordpress:cli
-    container_name: webp-migrator-wpcli-nginx
-    volumes:
-      - wordpress_data:/var/www/html
-      - ../src:/var/www/html/wp-content/plugins/webp-safe-migrator
-    environment:
-      WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress123
-      WORDPRESS_DB_NAME: wordpress_webp_test
-    depends_on:
-      - db
-      - wordpress
-    command: tail -f /dev/null  # Keep container running
-    restart: unless-stopped
-    networks:
-      - webp-migrator-net
-
   # Optional: Redis for caching
   redis:
     image: redis:alpine
