@@ -76,10 +76,10 @@ echo ""
 echo "WordPress Plugin Status:"
 echo "------------------------"
 echo "Checking active plugins..."
-if podman exec webp-migrator-wpcli wp plugin list --status=active --format=table --allow-root 2>/dev/null; then
+if podman exec webp-migrator-wordpress wp plugin list --status=active --format=table --allow-root 2>/dev/null; then
     echo ""
     echo "WebP Safe Migrator status:"
-    if podman exec webp-migrator-wpcli wp plugin status webp-safe-migrator --allow-root 2>/dev/null; then
+    if podman exec webp-migrator-wordpress wp plugin status webp-safe-migrator --allow-root 2>/dev/null; then
         echo -e "${GREEN}✓ WebP Safe Migrator is active and working${NC}"
     else
         echo -e "${RED}❌ WebP Safe Migrator not found or inactive${NC}"

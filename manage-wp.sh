@@ -18,7 +18,7 @@ echo "====================================="
 echo ""
 
 # Check if WordPress container is running
-if ! podman ps --format "{{.Names}}" | grep -q webp-migrator-wpcli; then
+if ! podman ps --format "{{.Names}}" | grep -q webp-migrator-wordpress; then
     echo -e "${RED}ERROR: WP-CLI container not running${NC}"
     echo "Run ./launch-webp-migrator.sh first"
     exit 1
@@ -29,19 +29,19 @@ ACTION=${1:-help}
 case $ACTION in
     plugins)
         echo "Listing WordPress plugins..."
-        podman exec webp-migrator-wpcli wp plugin list --format=table --allow-root
+        podman exec webp-migrator-wordpress wp plugin list --format=table --allow-root
         ;;
         
     plugin-status)
         PLUGIN_NAME=${2:-webp-safe-migrator}
         echo "Checking $PLUGIN_NAME plugin status..."
-        podman exec webp-migrator-wpcli wp plugin status "$PLUGIN_NAME" --allow-root
+        podman exec webp-migrator-wordpress wp plugin status "$PLUGIN_NAME" --allow-root
         ;;
         
     activate)
         PLUGIN_NAME=${2:-webp-safe-migrator}
         echo "Activating $PLUGIN_NAME plugin..."
-        if podman exec webp-migrator-wpcli wp plugin activate "$PLUGIN_NAME" --allow-root; then
+        if podman exec webp-migrator-wordpress wp plugin activate "$PLUGIN_NAME" --allow-root; then
             echo -e "${GREEN}✓ Plugin activated successfully${NC}"
         else
             echo -e "${RED}❌ Plugin activation failed${NC}"
@@ -51,7 +51,7 @@ case $ACTION in
     deactivate)
         PLUGIN_NAME=${2:-webp-safe-migrator}
         echo "Deactivating $PLUGIN_NAME plugin..."
-        if podman exec webp-migrator-wpcli wp plugin deactivate "$PLUGIN_NAME" --allow-root; then
+        if podman exec webp-migrator-wordpress wp plugin deactivate "$PLUGIN_NAME" --allow-root; then
             echo -e "${GREEN}✓ Plugin deactivated successfully${NC}"
         else
             echo -e "${RED}❌ Plugin deactivation failed${NC}"
@@ -61,36 +61,36 @@ case $ACTION in
     wp-info)
         echo "WordPress Installation Info:"
         echo "----------------------------"
-        podman exec webp-migrator-wpcli wp core version --allow-root
-        podman exec webp-migrator-wpcli wp core check-update --allow-root
+        podman exec webp-migrator-wordpress wp core version --allow-root
+        podman exec webp-migrator-wordpress wp core check-update --allow-root
         echo ""
         echo "WordPress Configuration:"
-        podman exec webp-migrator-wpcli wp config list --allow-root
+        podman exec webp-migrator-wordpress wp config list --allow-root
         ;;
         
     db-check)
         echo "Database Connection Test:"
         echo "------------------------"
-        if podman exec webp-migrator-wpcli wp db check --allow-root; then
+        if podman exec webp-migrator-wordpress wp db check --allow-root; then
             echo -e "${GREEN}✓ Database connection OK${NC}"
         else
             echo -e "${RED}❌ Database connection failed${NC}"
         fi
         echo ""
         echo "Database Size:"
-        podman exec webp-migrator-wpcli wp db size --allow-root
+        podman exec webp-migrator-wordpress wp db size --allow-root
         ;;
         
     cache-flush)
         echo "Flushing WordPress caches..."
-        podman exec webp-migrator-wpcli wp cache flush --allow-root
-        podman exec webp-migrator-wpcli wp rewrite flush --allow-root
+        podman exec webp-migrator-wordpress wp cache flush --allow-root
+        podman exec webp-migrator-wordpress wp rewrite flush --allow-root
         echo -e "${GREEN}✓ WordPress caches flushed${NC}"
         ;;
         
     shell)
         echo "Opening WP-CLI shell..."
-        podman exec -it webp-migrator-wpcli bash
+        podman exec -it webp-migrator-wordpress bash
         ;;
         
     help|*)
