@@ -47,7 +47,7 @@ function Read-PluginConfiguration {
         }
         
         # Find our profile
-        if ($inDeployment -and $line -match "^$ProfileName:") {
+        if ($inDeployment -and $line -match "^${ProfileName}:") {
             $inProfile = $true
             Write-Host "  Found configuration for profile: $ProfileName" -ForegroundColor Green
             continue

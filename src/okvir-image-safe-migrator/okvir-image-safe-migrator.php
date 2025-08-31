@@ -45,6 +45,7 @@ class Okvir_Image_Safe_Migrator {
             'jxl_effort'        => 7,           // JPEG XL compression effort (1-9)
             'batch_size'        => 10,
             'validation'        => 1,           // 1 = validate (keep originals), 0 = delete originals immediately
+            'auto_commit'       => 0,           // 1 = auto-commit successful conversions, 0 = require manual commit
             'skip_folders'      => "",          // textarea, one per line (relative to uploads), substring match
             'skip_mimes'        => "",          // comma/space separated MIME types to skip (e.g. "image/gif")
                 'enable_bounding_box' => 0,        // Enable bounding box resizing
@@ -196,6 +197,7 @@ class Okvir_Image_Safe_Migrator {
         $jxl_effort     = isset($_POST['jxl_effort']) ? max(1, min(9, (int)$_POST['jxl_effort'])) : 7;
         $batch_size     = isset($_POST['batch_size']) ? max(1, min(1000, (int)$_POST['batch_size'])) : 10;
         $validation     = isset($_POST['validation']) ? 1 : 0;
+        $auto_commit    = isset($_POST['auto_commit']) ? 1 : 0;
 
         $skip_folders_raw = isset($_POST['skip_folders']) ? (string)$_POST['skip_folders'] : '';
         $skip_mimes_raw   = isset($_POST['skip_mimes']) ? (string)$_POST['skip_mimes'] : '';
@@ -217,6 +219,7 @@ class Okvir_Image_Safe_Migrator {
             'jxl_effort'        => $jxl_effort,
             'batch_size'        => $batch_size,
             'validation'        => $validation,
+            'auto_commit'       => $auto_commit,
             'skip_folders'      => $skip_folders_raw,
             'skip_mimes'        => $skip_mimes_raw,
             'enable_bounding_box' => $enable_bounding_box,
@@ -493,6 +496,7 @@ class Okvir_Image_Safe_Migrator {
         $jxl_effort    = (int)($this->settings['jxl_effort'] ?? 7);
         $batch_size    = (int)$this->settings['batch_size'];
         $validation    = (int)$this->settings['validation'];
+        $auto_commit   = (int)($this->settings['auto_commit'] ?? 0);
         $skip_folders  = (string)$this->settings['skip_folders'];
         $skip_mimes    = (string)$this->settings['skip_mimes'];
         $enable_bounding_box = (int)($this->settings['enable_bounding_box'] ?? 0);
@@ -564,7 +568,19 @@ class Okvir_Image_Safe_Migrator {
                         <td><input type="number" name="batch_size" id="batch_size" min="1" max="1000" value="<?php echo esc_attr($batch_size); ?>"></td>
                     </tr>
                     <tr><th scope="row"><label for="validation">Validation mode</label></th>
-                        <td><label><input type="checkbox" name="validation" <?php checked($validation, 1); ?>> Keep originals until you press "Commit"</label></td>
+                        <td>
+                            <label><input type="checkbox" name="validation" id="validation" <?php checked($validation, 1); ?> onchange="toggleAutoCommitOption()"> Keep originals until you press "Commit"</label>
+                            <p class="description">When enabled, original files are backed up and conversion can be undone. When disabled, originals are deleted immediately.</p>
+                        </td>
+                    </tr>
+                    <tr class="auto-commit-settings" style="<?php echo !$validation ? 'display:none;' : ''; ?>"><th scope="row"><label for="auto_commit">Auto-Commit Mode</label></th>
+                        <td>
+                            <label><input type="checkbox" name="auto_commit" id="auto_commit" <?php checked($auto_commit, 1); ?>> Automatically commit successful conversions</label>
+                            <p class="description"><strong>⚠️ STORAGE WARNING:</strong> When validation is enabled but auto-commit is disabled, <strong>backup folders accumulate and can exhaust server storage quickly</strong>, especially with batch processing. Enable auto-commit or disable validation for large libraries.</p>
+                            <div id="storage-warning" style="margin-top: 10px; padding: 10px; background: #fff2cc; border-left: 4px solid #ffb900; <?php echo (!$validation || $auto_commit) ? 'display:none;' : ''; ?>">
+                                <strong>🚨 STORAGE RISK:</strong> Current settings will create backup folders for every conversion. With large image libraries, this can quickly exhaust server storage. Consider enabling auto-commit or disabling validation.
+                            </div>
+                        </td>
                     </tr>
                     <tr><th scope="row"><label for="skip_folders">Skip folders</label></th>
                         <td>
@@ -646,6 +662,26 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     });
                 }
                 
+                function toggleAutoCommitOption() {
+                    var validationEnabled = document.getElementById('validation').checked;
+                    var autoCommitRow = document.querySelector('.auto-commit-settings');
+                    var storageWarning = document.getElementById('storage-warning');
+                    var autoCommitEnabled = document.getElementById('auto_commit').checked;
+                    
+                    if (validationEnabled) {
+                        autoCommitRow.style.display = 'table-row';
+                        // Show storage warning if validation is on but auto-commit is off
+                        if (!autoCommitEnabled) {
+                            storageWarning.style.display = 'block';
+                        } else {
+                            storageWarning.style.display = 'none';
+                        }
+                    } else {
+                        autoCommitRow.style.display = 'none';
+                        storageWarning.style.display = 'none';
+                    }
+                }
+                
                 // Initialize on page load
                 document.addEventListener('DOMContentLoaded', function() {
                     var format = document.getElementById('target_format').value;
@@ -653,6 +689,12 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     
                     var boundingBoxEnabled = document.getElementById('enable_bounding_box').checked;
                     toggleBoundingBoxOptions(boundingBoxEnabled);
+                    
+                    // Initialize auto-commit option display
+                    toggleAutoCommitOption();
+                    
+                    // Add event listener for auto-commit checkbox
+                    document.getElementById('auto_commit').addEventListener('change', toggleAutoCommitOption);
                 });
                 </script>
                 
@@ -1735,14 +1777,28 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             error_log('WebP Migrator: File cleanup failed for attachment #' . $att_id . ', but conversion completed successfully');
         }
 
-        // Mark status for UI
-        update_post_meta($att_id, self::STATUS_META, $validation_mode ? 'relinked' : 'committed');
-        if ($backup_dir) update_post_meta($att_id, self::BACKUP_META, $backup_dir);
-
-        // Update conversion statistics
-        if (!$validation_mode) {
-            // If not in validation mode, it's immediately committed
+        // Check for auto-commit functionality
+        $auto_commit_enabled = !empty($this->settings['auto_commit']);
+        $should_auto_commit = $validation_mode && $auto_commit_enabled;
+        
+        if ($should_auto_commit) {
+            // Auto-commit: conversion successful, commit immediately
+            if ($backup_dir && is_dir($backup_dir)) {
+                $this->rrmdir($backup_dir); // Delete backup immediately
+            }
+            update_post_meta($att_id, self::STATUS_META, 'committed');
+            // Don't store backup_dir meta since we're auto-committing
             $this->update_conversion_statistics($att_id, 'committed');
+        } else {
+            // Normal flow: mark status based on validation mode
+            update_post_meta($att_id, self::STATUS_META, $validation_mode ? 'relinked' : 'committed');
+            if ($backup_dir) update_post_meta($att_id, self::BACKUP_META, $backup_dir);
+            
+            // Update conversion statistics
+            if (!$validation_mode) {
+                // If not in validation mode, it's immediately committed
+                $this->update_conversion_statistics($att_id, 'committed');
+            }
         }
 
         return true;

@@ -1,16 +1,16 @@
 @echo off
 REM ==============================================================================
-REM WebP Safe Migrator - Windows Cleanup Script
+REM Multi-Plugin WordPress Environment - Windows Cleanup Script
 REM Stops all containers safely
 REM ==============================================================================
 
 echo.
 echo =====================================
-echo   WebP Safe Migrator Cleanup
+echo   Multi-Plugin Environment Cleanup
 echo =====================================
 echo.
 
-echo Stopping WebP Safe Migrator containers...
+echo Stopping Multi-Plugin WordPress containers...
 echo.
 
 REM Stop all containers gracefully

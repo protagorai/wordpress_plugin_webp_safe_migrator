@@ -60,14 +60,14 @@ goto end
 :start
 echo.
 echo =====================================
-echo    WebP Safe Migrator Launcher  
+echo    Multi-Plugin Environment Launcher  
 echo =====================================
 echo.
 
 REM Load configuration
 call bin\config\load-config.bat
 
-echo Starting WebP Safe Migrator deployment...
+echo Starting Multi-Plugin WordPress environment deployment...
 echo.
 
 REM Clean start (like simple script)
@@ -196,9 +196,9 @@ if errorlevel 1 (
     REM Deploy plugins using configuration-driven deployment
     echo Deploying plugins using configuration from bin/config/plugins.yaml...
     
-    REM Use configuration-driven deployment script
+    REM Use working deployment script
     echo * Reading deployment configuration for development profile...
-    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-to-container.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
+    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-working.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
     
     if errorlevel 1 (
         echo ! Configuration-driven deployment failed, falling back to manual plugin installation...
@@ -331,7 +331,7 @@ if "%2"=="" (
     powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "list"
 ) else if "%2"=="deploy" (
     echo * Deploying plugins to running container...
-    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-to-container.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
+    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-working.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
 ) else if "%2"=="activate" (
     if "%3"=="" (
         echo * Showing current plugin status...
