@@ -155,7 +155,7 @@ class WebP_Safe_Migrator {
         add_media_page(
             'WebP Safe Migrator', 
             'WebP Migrator', 
-            'manage_options', 
+            'manage_options',
             'webp-safe-migrator', 
             [$this, 'render_tabbed_interface']
         );
@@ -259,6 +259,9 @@ class WebP_Safe_Migrator {
         
         // Handle conversion error actions
         $this->handle_error_actions();
+        
+        // Handle maintenance actions
+        $this->handle_maintenance_actions();
     }
 
     private function handle_dimension_actions() {
@@ -356,6 +359,40 @@ class WebP_Safe_Migrator {
             add_settings_error('webp_safe_migrator', 'rollback_all', "Rolled back conversions for {$count} attachments.", 'updated');
         }
     }
+    
+    private function handle_maintenance_actions() {
+        if (!current_user_can('manage_options')) return;
+
+        // Clean up orphaned metadata
+        if (isset($_POST['cleanup_metadata']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'cleanup_metadata')) {
+            $cleaned = $this->cleanup_orphaned_metadata();
+            if ($cleaned > 0) {
+                add_settings_error('webp_safe_migrator', 'cleanup_done', "Cleaned up {$cleaned} orphaned metadata entries and directories.", 'updated');
+            } else {
+                add_settings_error('webp_safe_migrator', 'cleanup_nothing', "No orphaned metadata found to clean up.", 'updated');
+            }
+        }
+
+        // Reset all statistics  
+        if (isset($_POST['reset_statistics']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'reset_statistics')) {
+            delete_option('webp_migrator_statistics');
+            add_settings_error('webp_safe_migrator', 'stats_reset', "All conversion statistics have been reset.", 'updated');
+        }
+
+        // Clear all completed conversion data
+        if (isset($_POST['clear_completed_data']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'clear_completed')) {
+            global $wpdb;
+            $cleared = $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value = 'committed'",
+                self::STATUS_META
+            ));
+            if ($cleared > 0) {
+                add_settings_error('webp_safe_migrator', 'completed_cleared', "Cleared {$cleared} completed conversion records.", 'updated');
+            } else {
+                add_settings_error('webp_safe_migrator', 'no_completed', "No completed conversion records found to clear.", 'updated');
+            }
+        }
+    }
 
     private function current_validation_mode(): bool {
         if ($this->runtime_validation_override !== null) return (bool)$this->runtime_validation_override;
@@ -367,7 +404,7 @@ class WebP_Safe_Migrator {
         
         // Determine active tab
         $active_tab = $_GET['tab'] ?? 'settings';
-        $valid_tabs = ['settings', 'batch', 'reports', 'errors', 'reprocess', 'dimensions'];
+        $valid_tabs = ['settings', 'batch', 'reports', 'errors', 'reprocess', 'dimensions', 'maintenance'];
         if (!in_array($active_tab, $valid_tabs)) {
             $active_tab = 'settings';
         }
@@ -386,6 +423,7 @@ class WebP_Safe_Migrator {
                 <?php if (!empty($this->settings['check_filename_dimensions'])): ?>
                 <a href="?page=webp-safe-migrator&tab=dimensions" class="nav-tab <?php echo $active_tab == 'dimensions' ? 'nav-tab-active' : ''; ?>">Dimension Issues</a>
                 <?php endif; ?>
+                <a href="?page=webp-safe-migrator&tab=maintenance" class="nav-tab <?php echo $active_tab == 'maintenance' ? 'nav-tab-active' : ''; ?>">Maintenance</a>
             </h2>
             
             <!-- Tab Content -->
@@ -409,6 +447,9 @@ class WebP_Safe_Migrator {
                         break;
                     case 'dimensions':
                         $this->render_dimensions_tab();
+                        break;
+                    case 'maintenance':
+                        $this->render_maintenance_tab();
                         break;
                     default:
                         $this->render_settings_tab();
@@ -1337,7 +1378,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         global $wpdb;
         [$skip_folders, $skip_mimes] = $this->get_skip_rules();
 
-        // Target mimes are default base mimes minus skip_mimes  
+        // Target mimes are default base mimes minus skip_mimes
         $target_mimes = array_values(array_diff(self::DEFAULT_BASE_MIMES, $skip_mimes));
         if (!$target_mimes) return [];
 
@@ -1500,8 +1541,8 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         // Convert original to target format
         $format_options = $this->get_format_options($target_format, $quality);
         try {
-            $converted = $this->convert_to_format($file, $new_path, $target_format, $format_options);
-            if (!$converted) {
+        $converted = $this->convert_to_format($file, $new_path, $target_format, $format_options);
+        if (!$converted) {
                 $this->log_conversion_error($att_id, 'Format conversion failed - unable to convert image to ' . $target_format, 'format_conversion', [
                     'source_format' => $mime,
                     'target_format' => $target_format,
@@ -1565,8 +1606,8 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
 
         // Generate fresh metadata/sizes from converted original
         try {
-            $new_meta = wp_generate_attachment_metadata($att_id, $new_path);
-            if (!$new_meta || empty($new_meta['file'])) {
+        $new_meta = wp_generate_attachment_metadata($att_id, $new_path);
+        if (!$new_meta || empty($new_meta['file'])) {
                 $this->log_conversion_error($att_id, 'Failed to generate attachment metadata for converted image', 'metadata_generation', [
                     'converted_path' => $new_path,
                     'generated_meta' => $new_meta
@@ -1586,7 +1627,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
 
         // Build URL mapping (old → new) for original and sizes
         try {
-            $map = $this->build_url_map($uploads, $old_meta, $new_meta);
+        $map = $this->build_url_map($uploads, $old_meta, $new_meta);
         } catch (Exception $e) {
             $this->log_conversion_error($att_id, 'Failed to build URL mapping: ' . $e->getMessage(), 'url_mapping', [
                 'old_meta' => $old_meta,
@@ -1599,7 +1640,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
 
         // Update usages across DB and collect a report of changes
         try {
-            $report = $this->replace_everywhere($map);
+        $report = $this->replace_everywhere($map);
         } catch (Exception $e) {
             $this->log_conversion_error($att_id, 'Failed to update database references: ' . $e->getMessage(), 'database_update', [
                 'map_count' => count($map ?? [])
@@ -1611,19 +1652,19 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
 
         // Update attachment post + metas
         try {
-            $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
+        $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
             $post_update_result = wp_update_post([
-                'ID'             => $att_id,
-                'post_mime_type' => $target_mime,
-                'guid'           => $uploads['baseurl'] . '/' . $new_meta['file'],
-            ]);
+            'ID'             => $att_id,
+            'post_mime_type' => $target_mime,
+            'guid'           => $uploads['baseurl'] . '/' . $new_meta['file'],
+        ]);
             
             if (is_wp_error($post_update_result) || $post_update_result === 0) {
                 throw new Exception('wp_update_post failed: ' . (is_wp_error($post_update_result) ? $post_update_result->get_error_message() : 'Unknown error'));
             }
             
-            update_post_meta($att_id, '_wp_attached_file', $new_meta['file']);
-            wp_update_attachment_metadata($att_id, $new_meta);
+        update_post_meta($att_id, '_wp_attached_file', $new_meta['file']);
+        wp_update_attachment_metadata($att_id, $new_meta);
         } catch (Exception $e) {
             $this->log_conversion_error($att_id, 'Failed to update attachment metadata: ' . $e->getMessage(), 'attachment_update', [
                 'target_mime' => $target_mime ?? '',
@@ -1634,20 +1675,21 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             return false;
         }
 
-        // Store report
+        // Store report WITH URL mapping for potential rollback
         try {
-            $report_payload = [
-                'ts'            => current_time('mysql'),
-                'map_count'     => count($map),
-                'posts'         => array_values(array_unique($report['posts'] ?? [])),
-                'postmeta'      => array_values($report['postmeta'] ?? []),
-                'options'       => array_values(array_unique($report['options'] ?? [])),
-                'usermeta'      => array_values($report['usermeta'] ?? []),
-                'termmeta'      => array_values($report['termmeta'] ?? []),
-                'comments'      => array_values(array_unique($report['comments'] ?? [])),
-                'custom_tables' => array_values($report['custom_tables'] ?? []),
-            ];
-            update_post_meta($att_id, self::REPORT_META, wp_json_encode($report_payload));
+        $report_payload = [
+            'ts'            => current_time('mysql'),
+            'map_count'     => count($map),
+                'url_map'       => $map,  // CRITICAL: Store URL mapping for rollback
+            'posts'         => array_values(array_unique($report['posts'] ?? [])),
+            'postmeta'      => array_values($report['postmeta'] ?? []),
+            'options'       => array_values(array_unique($report['options'] ?? [])),
+            'usermeta'      => array_values($report['usermeta'] ?? []),
+            'termmeta'      => array_values($report['termmeta'] ?? []),
+            'comments'      => array_values(array_unique($report['comments'] ?? [])),
+            'custom_tables' => array_values($report['custom_tables'] ?? []),
+        ];
+        update_post_meta($att_id, self::REPORT_META, wp_json_encode($report_payload));
         } catch (Exception $e) {
             // Report storage failure is not critical - log but continue
             error_log('WebP Migrator: Failed to store conversion report for attachment #' . $att_id . ': ' . $e->getMessage());
@@ -1662,7 +1704,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
 
         // Move/delete old files (always preserve in validation mode or on any previous error)
         try {
-            $this->collect_and_remove_old_files($uploads, $old_meta, $validation_mode, $backup_dir);
+        $this->collect_and_remove_old_files($uploads, $old_meta, $validation_mode, $backup_dir);
         } catch (Exception $e) {
             $this->log_conversion_error($att_id, 'Failed to handle original files: ' . $e->getMessage(), 'file_cleanup', [
                 'backup_dir' => $backup_dir,
@@ -1675,6 +1717,12 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         // Mark status for UI
         update_post_meta($att_id, self::STATUS_META, $validation_mode ? 'relinked' : 'committed');
         if ($backup_dir) update_post_meta($att_id, self::BACKUP_META, $backup_dir);
+
+        // Update conversion statistics
+        if (!$validation_mode) {
+            // If not in validation mode, it's immediately committed
+            $this->update_conversion_statistics($att_id, 'committed');
+        }
 
         return true;
     }
@@ -2004,6 +2052,11 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         // Save updated log
         $json_data = wp_json_encode($log_data, JSON_PRETTY_PRINT);
         @file_put_contents($log_file, $json_data, LOCK_EX);
+        
+        // Update error statistics (only for new errors, not repeated ones)
+        if (!$existing_entry) {
+            $this->update_conversion_statistics($att_id, 'error');
+        }
         
         // Also log to WordPress error log for immediate visibility
         error_log(sprintf(
@@ -2367,8 +2420,16 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         if ($backup_dir && is_dir($backup_dir)) {
             $this->rrmdir($backup_dir);
         }
-        update_post_meta($att_id, self::STATUS_META, 'committed');
+        
+        // COMPREHENSIVE CLEANUP: Remove all plugin metadata after commit
+        delete_post_meta($att_id, self::STATUS_META);
         delete_post_meta($att_id, self::BACKUP_META);
+        delete_post_meta($att_id, self::REPORT_META);
+        delete_post_meta($att_id, self::ERROR_META);
+        
+        // Update conversion statistics
+        $this->update_conversion_statistics($att_id, 'committed');
+        
         return true;
     }
 
@@ -2448,6 +2509,16 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 $original_mime = $image_info['mime'] ?? 'image/jpeg';
             }
             
+            // CRITICAL: Reverse database URL changes using stored mapping
+            $conversion_report = json_decode(get_post_meta($att_id, self::REPORT_META, true) ?: '{}', true);
+            if (!empty($conversion_report['url_map'])) {
+                // Create reverse mapping (new → old)
+                $reverse_map = array_flip($conversion_report['url_map']);
+                
+                // Reverse all database changes
+                $this->replace_everywhere($reverse_map);
+            }
+            
             // Update attachment to original state
             wp_update_post([
                 'ID' => $att_id,
@@ -2477,11 +2548,14 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 }
             }
             
-            // Reset status and clear metadata
+            // COMPREHENSIVE CLEANUP: Remove all plugin metadata
             delete_post_meta($att_id, self::STATUS_META);
-            delete_post_meta($att_id, self::BACKUP_META);
+            delete_post_meta($att_id, self::BACKUP_META); 
             delete_post_meta($att_id, self::REPORT_META);
             delete_post_meta($att_id, self::ERROR_META);
+            
+            // Update conversion statistics
+            $this->update_conversion_statistics($att_id, 'rolled_back');
             
             // Keep backup directory for potential future reference
             // Could optionally delete it: $this->rrmdir($backup_dir);
@@ -2492,6 +2566,174 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             error_log('WebP Migrator Rollback Error: ' . $e->getMessage() . ' (Attachment #' . $att_id . ')');
             return false;
         }
+    }
+    
+    /**
+     * Update conversion statistics for tracking and analytics
+     */
+    private function update_conversion_statistics($att_id, $action) {
+        $stats = get_option('webp_migrator_statistics', [
+            'total_conversions' => 0,
+            'total_commits' => 0,
+            'total_rollbacks' => 0,
+            'total_errors' => 0,
+            'formats' => [],
+            'first_conversion' => null,
+            'last_conversion' => null,
+        ]);
+        
+        $current_time = current_time('mysql');
+        $file_size = 0;
+        $source_format = '';
+        $target_format = $this->settings['target_format'] ?? 'webp';
+        
+        // Get file information
+        $file_path = get_attached_file($att_id);
+        if ($file_path && file_exists($file_path)) {
+            $file_size = filesize($file_path);
+            $mime = get_post_mime_type($att_id);
+            $source_format = str_replace('image/', '', $mime ?: '');
+        }
+        
+        // Update statistics based on action
+        switch ($action) {
+            case 'committed':
+                $stats['total_commits']++;
+                $stats['total_conversions']++;
+                break;
+            case 'rolled_back':
+                $stats['total_rollbacks']++;
+                break;
+            case 'error':
+                $stats['total_errors']++;
+                break;
+        }
+        
+        // Track format conversions
+        if ($action === 'committed' && $source_format && $target_format) {
+            $format_key = $source_format . '_to_' . $target_format;
+            $stats['formats'][$format_key] = ($stats['formats'][$format_key] ?? 0) + 1;
+        }
+        
+        // Update timestamps
+        if ($action === 'committed') {
+            if (!$stats['first_conversion']) {
+                $stats['first_conversion'] = $current_time;
+            }
+            $stats['last_conversion'] = $current_time;
+        }
+        
+        update_option('webp_migrator_statistics', $stats);
+    }
+    
+    /**
+     * Get comprehensive plugin statistics and metadata counts
+     */
+    private function get_plugin_statistics() {
+        global $wpdb;
+        
+        // Get basic statistics
+        $stats = get_option('webp_migrator_statistics', [
+            'total_conversions' => 0,
+            'total_commits' => 0,
+            'total_rollbacks' => 0,
+            'total_errors' => 0,
+            'formats' => [],
+            'first_conversion' => null,
+            'last_conversion' => null,
+        ]);
+        
+        // Count current plugin metadata rows
+        $meta_counts = [];
+        $meta_keys = [
+            self::STATUS_META => 'Status Records',
+            self::BACKUP_META => 'Backup References', 
+            self::REPORT_META => 'Conversion Reports',
+            self::ERROR_META => 'Error Records'
+        ];
+        
+        foreach ($meta_keys as $key => $label) {
+            $count = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s",
+                $key
+            ));
+            $meta_counts[$key] = [
+                'label' => $label,
+                'count' => (int)$count
+            ];
+        }
+        
+        // Count pending, committed, and error statuses
+        $status_counts = [];
+        $status_types = ['relinked', 'committed', 'convert_failed', 'metadata_failed', 'skipped_animated_gif'];
+        
+        foreach ($status_types as $status) {
+            $count = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value = %s",
+                self::STATUS_META,
+                $status
+            ));
+            $status_counts[$status] = (int)$count;
+        }
+        
+        return [
+            'conversion_stats' => $stats,
+            'meta_counts' => $meta_counts,
+            'status_counts' => $status_counts,
+            'total_meta_rows' => array_sum(array_column($meta_counts, 'count'))
+        ];
+    }
+    
+    /**
+     * Clean up orphaned plugin metadata
+     */
+    private function cleanup_orphaned_metadata() {
+        global $wpdb;
+        
+        $cleaned = 0;
+        
+        // Remove metadata for non-existent attachments
+        $meta_keys = [self::STATUS_META, self::BACKUP_META, self::REPORT_META, self::ERROR_META];
+        
+        foreach ($meta_keys as $key) {
+            $result = $wpdb->query($wpdb->prepare(
+                "DELETE pm FROM {$wpdb->postmeta} pm 
+                 LEFT JOIN {$wpdb->posts} p ON pm.post_id = p.ID 
+                 WHERE pm.meta_key = %s AND p.ID IS NULL",
+                $key
+            ));
+            $cleaned += (int)$result;
+        }
+        
+        // Remove old backup directories that no longer have metadata references
+        $uploads = wp_get_upload_dir();
+        $backup_base = trailingslashit($uploads['basedir']) . 'webp-migrator-backup';
+        
+        if (is_dir($backup_base)) {
+            $dirs = scandir($backup_base);
+            foreach ($dirs as $dir) {
+                if ($dir === '.' || $dir === '..') continue;
+                
+                $full_path = trailingslashit($backup_base) . $dir;
+                if (is_dir($full_path)) {
+                    // Check if any metadata still references this backup
+                    $referenced = $wpdb->get_var($wpdb->prepare(
+                        "SELECT COUNT(*) FROM {$wpdb->postmeta} 
+                         WHERE meta_key = %s AND meta_value LIKE %s",
+                        self::BACKUP_META,
+                        '%' . $dir . '%'
+                    ));
+                    
+                    if ($referenced == 0) {
+                        // No references - safe to delete
+                        $this->rrmdir($full_path);
+                        $cleaned++;
+                    }
+                }
+            }
+        }
+        
+        return $cleaned;
     }
 
     private function rrmdir($dir) {
@@ -3055,6 +3297,163 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             });
             </script>
         <?php
+    }
+    
+    /**
+     * Render maintenance and statistics tab
+     */
+    public function render_maintenance_tab() {
+        settings_errors('webp_safe_migrator');
+        
+        $plugin_stats = $this->get_plugin_statistics();
+        $conversion_stats = $plugin_stats['conversion_stats'];
+        $meta_counts = $plugin_stats['meta_counts'];
+        $status_counts = $plugin_stats['status_counts'];
+        $total_meta_rows = $plugin_stats['total_meta_rows'];
+        
+        ?>
+        <h2>Maintenance & Statistics</h2>
+        <p>Monitor plugin performance, manage database records, and maintain system health.</p>
+        
+        <!-- Statistics Overview -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0;">
+            <div style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9;">
+                <h3>Conversion Statistics</h3>
+                <table class="form-table" style="margin: 0;">
+                    <tr><td><strong>Total Conversions:</strong></td><td><?php echo esc_html($conversion_stats['total_conversions']); ?></td></tr>
+                    <tr><td><strong>Total Commits:</strong></td><td><?php echo esc_html($conversion_stats['total_commits']); ?></td></tr>
+                    <tr><td><strong>Total Rollbacks:</strong></td><td><?php echo esc_html($conversion_stats['total_rollbacks']); ?></td></tr>
+                    <tr><td><strong>Total Errors:</strong></td><td><?php echo esc_html($conversion_stats['total_errors']); ?></td></tr>
+                    <tr><td><strong>First Conversion:</strong></td><td><?php echo esc_html($conversion_stats['first_conversion'] ?: 'None yet'); ?></td></tr>
+                    <tr><td><strong>Last Conversion:</strong></td><td><?php echo esc_html($conversion_stats['last_conversion'] ?: 'None yet'); ?></td></tr>
+                </table>
+            </div>
+            
+            <div style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9;">
+                <h3>Database Impact</h3>
+                <table class="form-table" style="margin: 0;">
+                    <tr><td><strong>Total Plugin Rows:</strong></td><td><strong style="color: <?php echo $total_meta_rows > 100 ? '#d63638' : '#0073aa'; ?>;"><?php echo esc_html($total_meta_rows); ?></strong></td></tr>
+                    <?php foreach ($meta_counts as $key => $info): ?>
+                    <tr><td><?php echo esc_html($info['label']); ?>:</td><td><?php echo esc_html($info['count']); ?></td></tr>
+                    <?php endforeach; ?>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Current Status Breakdown -->
+        <?php if (array_sum($status_counts) > 0): ?>
+        <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; background: #f0f8ff;">
+            <h3>Current Processing Status</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <?php foreach ($status_counts as $status => $count): ?>
+                    <?php if ($count > 0): ?>
+                        <span class="button button-small" style="cursor: default; 
+                            background: <?php echo $status === 'relinked' ? '#00a32a' : ($status === 'committed' ? '#0073aa' : '#d63638'); ?>; 
+                            color: white; margin: 2px;">
+                            <?php echo esc_html(ucfirst(str_replace('_', ' ', $status))); ?>: <?php echo esc_html($count); ?>
+                        </span>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        
+        <!-- Format Conversion Breakdown -->
+        <?php if (!empty($conversion_stats['formats'])): ?>
+        <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; background: #f9f9f9;">
+            <h3>Format Conversions</h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <?php foreach ($conversion_stats['formats'] as $conversion => $count): ?>
+                    <span class="button button-small" style="cursor: default; margin: 2px;">
+                        <?php echo esc_html(strtoupper(str_replace('_to_', ' → ', $conversion))); ?>: <?php echo esc_html($count); ?>
+                    </span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+        
+        <!-- Maintenance Actions -->
+        <div style="margin: 20px 0;">
+            <h3>Database Maintenance</h3>
+            <p>Clean up orphaned data and manage plugin records in wp_postmeta table.</p>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                <div style="border: 1px solid #ddd; padding: 15px;">
+                    <h4>Clean Orphaned Data</h4>
+                    <p>Remove metadata for deleted attachments and unreferenced backup directories.</p>
+                    <form method="post" onsubmit="return confirm('Clean up orphaned plugin metadata? This is safe and recommended.');">
+                        <?php wp_nonce_field('cleanup_metadata', self::NONCE); ?>
+                        <button type="submit" name="cleanup_metadata" class="button button-secondary" value="1">Clean Orphaned Data</button>
+                    </form>
+                </div>
+                
+                <div style="border: 1px solid #ddd; padding: 15px;">
+                    <h4>Clear Completed Records</h4>
+                    <p>Remove metadata for successfully committed conversions to reduce database clutter.</p>
+                    <form method="post" onsubmit="return confirm('Clear all completed conversion records? This removes historical data but is safe.');">
+                        <?php wp_nonce_field('clear_completed', self::NONCE); ?>
+                        <button type="submit" name="clear_completed_data" class="button" value="1">Clear Completed</button>
+                    </form>
+                </div>
+                
+                <div style="border: 1px solid #ddd; padding: 15px;">
+                    <h4>Reset Statistics</h4>
+                    <p>Reset all conversion statistics and counters. This does not affect actual conversions.</p>
+                    <form method="post" onsubmit="return confirm('Reset all conversion statistics? This action cannot be undone.');">
+                        <?php wp_nonce_field('reset_statistics', self::NONCE); ?>
+                        <button type="submit" name="reset_statistics" class="button" value="1">Reset Statistics</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Health Check -->
+        <div style="margin: 20px 0; padding: 15px; border-left: 4px solid #0073aa; background: #f0f8ff;">
+            <h3>Database Health Check</h3>
+            <?php
+            $total_wp_postmeta = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->postmeta}");
+            $plugin_percentage = $total_wp_postmeta > 0 ? ($total_meta_rows / $total_wp_postmeta) * 100 : 0;
+            ?>
+            <p><strong>Plugin Impact:</strong> <?php echo number_format($plugin_percentage, 2); ?>% of wp_postmeta table (<?php echo esc_html($total_meta_rows); ?> out of <?php echo esc_html($total_wp_postmeta); ?> total rows)</p>
+            
+            <?php if ($plugin_percentage > 5): ?>
+                <div class="notice notice-warning inline" style="margin: 10px 0;">
+                    <p><strong>High Database Impact:</strong> The plugin is using more than 5% of your wp_postmeta table. Consider cleaning up completed records regularly.</p>
+                </div>
+            <?php elseif ($plugin_percentage > 1): ?>
+                <div class="notice notice-info inline" style="margin: 10px 0;">
+                    <p><strong>Moderate Database Impact:</strong> The plugin is using <?php echo number_format($plugin_percentage, 2); ?>% of your wp_postmeta table. This is normal for active usage.</p>
+                </div>
+            <?php else: ?>
+                <div class="notice notice-success inline" style="margin: 10px 0;">
+                    <p><strong>Low Database Impact:</strong> The plugin is using minimal database space (<?php echo number_format($plugin_percentage, 2); ?>%).</p>
+                </div>
+            <?php endif; ?>
+            
+            <p><strong>Maintenance Recommendation:</strong> 
+                <?php if ($total_meta_rows > 500): ?>
+                    Run cleanup monthly to maintain optimal performance.
+                <?php elseif ($total_meta_rows > 100): ?>
+                    Run cleanup quarterly to prevent database bloat.
+                <?php else: ?>
+                    No immediate maintenance needed.
+                <?php endif; ?>
+            </p>
+        </div>
+        
+        <!-- Advanced Options -->
+        <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; background: #fff8e1;">
+            <h3>Advanced Database Options</h3>
+            <p><strong>Future Enhancement:</strong> Custom table storage for plugin data to completely isolate from wp_postmeta.</p>
+            <p>This would move all plugin metadata to a dedicated table, making uninstall cleanup instantaneous and eliminating any impact on WordPress core tables.</p>
+            <p><em>Currently using WordPress native post meta for maximum compatibility.</em></p>
+        </div>
+        <?php
+    }
+
+    private function current_validation_mode(): bool {
+        if ($this->runtime_validation_override !== null) return (bool)$this->runtime_validation_override;
+        return (bool)$this->settings['validation'];
     }
 }
 
