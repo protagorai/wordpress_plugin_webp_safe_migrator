@@ -1671,7 +1671,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                                 'backup_created' => $backup_created
                             ]);
                             
-                            $resized = $this->resize_image($new_path, $new_width, $new_height);
+                            $resized = $this->resize_image($new_path, $new_width, $new_height, $att_id);
                             if (!$resized) {
                                 $this->log_resize_debug($att_id, "Resize operation FAILED", [
                                     'original_dimensions' => [$current_width, $current_height],
@@ -1681,11 +1681,17 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                                     'file_size_after_resize' => file_exists($new_path) ? filesize($new_path) : 0
                                 ]);
                                 
-                                $this->log_conversion_error($att_id, "Failed to resize image to {$new_width}x{$new_height}", 'bounding_box_resize', [
+                                $this->log_conversion_error($att_id, "Failed to resize image to {$new_width}x{$new_height} - Check resize debug log for detailed error information", 'bounding_box_resize', [
                                     'original_dimensions' => [$current_width, $current_height],
                                     'target_dimensions' => [$new_width, $new_height],
                                     'bounding_box_mode' => $box_mode,
-                                    'bounding_box_size' => [$box_width, $box_height]
+                                    'bounding_box_size' => [$box_width, $box_height],
+                                    'scale_factor' => round(($new_width / $current_width + $new_height / $current_height) / 2, 2),
+                                    'memory_at_failure' => [
+                                        'current' => memory_get_usage(true),
+                                        'peak' => memory_get_peak_usage(true),
+                                        'limit' => ini_get('memory_limit')
+                                    ]
                                 ]);
                                 
                                 // ROLLBACK: Restore pre-resize file if backup exists
@@ -2180,27 +2186,108 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     }
     
     /**
-     * Resize image using WordPress image editor - SAFE VERSION
+     * Resize image using WordPress image editor - SAFE VERSION with Enhanced Error Logging
      * Uses temporary file to prevent corruption of source file
      */
-    private function resize_image($src_path, $new_width, $new_height) {
+    private function resize_image($src_path, $new_width, $new_height, $att_id = null) {
         // Create temporary file for safe resizing
         $temp_path = $src_path . '.tmp.' . uniqid();
         
+        // Collect diagnostic information
+        $diagnostics = [
+            'php_memory_limit' => ini_get('memory_limit'),
+            'current_memory_usage' => memory_get_usage(true),
+            'memory_peak_usage' => memory_get_peak_usage(true),
+            'file_size' => file_exists($src_path) ? filesize($src_path) : 0,
+            'source_dimensions' => @getimagesize($src_path),
+            'target_dimensions' => [$new_width, $new_height],
+            'gd_info' => function_exists('gd_info') ? gd_info() : 'GD not available',
+            'imagick_available' => class_exists('Imagick')
+        ];
+        
         try {
+            // Enhanced logging for editor creation
+            if ($att_id) {
+                $this->log_resize_debug($att_id, "Creating image editor", [
+                    'source_file' => $src_path,
+                    'diagnostics' => $diagnostics
+                ]);
+            }
+            
             $editor = wp_get_image_editor($src_path);
             if (is_wp_error($editor)) {
+                $error_message = $editor->get_error_message();
+                $error_code = $editor->get_error_code();
+                $error_data = $editor->get_error_data();
+                
+                if ($att_id) {
+                    $this->log_resize_debug($att_id, "Image editor creation FAILED", [
+                        'wp_error_code' => $error_code,
+                        'wp_error_message' => $error_message,
+                        'wp_error_data' => $error_data,
+                        'diagnostics' => $diagnostics
+                    ]);
+                }
+                
+                error_log("WebP Migrator: wp_get_image_editor failed for {$src_path} - Code: {$error_code}, Message: {$error_message}");
                 return false;
+            }
+            
+            // Enhanced logging for resize operation
+            if ($att_id) {
+                $this->log_resize_debug($att_id, "Attempting image resize", [
+                    'editor_type' => get_class($editor),
+                    'target_dimensions' => [$new_width, $new_height],
+                    'crop_mode' => false
+                ]);
             }
             
             $resized = $editor->resize($new_width, $new_height, false); // false = don't crop, just resize
             if (is_wp_error($resized)) {
+                $error_message = $resized->get_error_message();
+                $error_code = $resized->get_error_code();
+                $error_data = $resized->get_error_data();
+                
+                if ($att_id) {
+                    $this->log_resize_debug($att_id, "Image resize operation FAILED", [
+                        'wp_error_code' => $error_code,
+                        'wp_error_message' => $error_message,
+                        'wp_error_data' => $error_data,
+                        'target_dimensions' => [$new_width, $new_height],
+                        'diagnostics' => $diagnostics
+                    ]);
+                }
+                
+                error_log("WebP Migrator: resize operation failed for {$src_path} to {$new_width}x{$new_height} - Code: {$error_code}, Message: {$error_message}");
                 return false;
+            }
+            
+            // Enhanced logging for save operation
+            if ($att_id) {
+                $this->log_resize_debug($att_id, "Saving resized image to temporary file", [
+                    'temp_path' => $temp_path
+                ]);
             }
             
             // Save to temporary file first
             $saved = $editor->save($temp_path);
             if (is_wp_error($saved)) {
+                $error_message = $saved->get_error_message();
+                $error_code = $saved->get_error_code();
+                $error_data = $saved->get_error_data();
+                
+                if ($att_id) {
+                    $this->log_resize_debug($att_id, "Image save operation FAILED", [
+                        'wp_error_code' => $error_code,
+                        'wp_error_message' => $error_message,
+                        'wp_error_data' => $error_data,
+                        'temp_path' => $temp_path,
+                        'diagnostics' => $diagnostics
+                    ]);
+                }
+                
+                error_log("WebP Migrator: save operation failed for {$temp_path} - Code: {$error_code}, Message: {$error_message}");
+                
                 // Clean up temp file on failure
                 if (file_exists($temp_path)) {
                     @unlink($temp_path);
@@ -2211,6 +2298,19 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             // Verify temp file is valid before replacing original
             $temp_size = @getimagesize($temp_path);
             if (!$temp_size || $temp_size[0] != $new_width || $temp_size[1] != $new_height) {
+                if ($att_id) {
+                    $this->log_resize_debug($att_id, "Resized image verification FAILED", [
+                        'expected_dimensions' => [$new_width, $new_height],
+                        'actual_dimensions' => $temp_size ? [$temp_size[0], $temp_size[1]] : null,
+                        'temp_file_exists' => file_exists($temp_path),
+                        'temp_file_size' => file_exists($temp_path) ? filesize($temp_path) : 0,
+                        'diagnostics' => $diagnostics
+                    ]);
+                }
+                
+                error_log("WebP Migrator: resize verification failed - expected {$new_width}x{$new_height}, got " . 
+                    ($temp_size ? $temp_size[0] . 'x' . $temp_size[1] : 'invalid image'));
+                
                 // Temp file is invalid, clean up and fail
                 if (file_exists($temp_path)) {
                     @unlink($temp_path);
@@ -2218,27 +2318,71 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 return false;
             }
             
+            // Enhanced logging for final file replacement
+            if ($att_id) {
+                $this->log_resize_debug($att_id, "Replacing original file with resized version", [
+                    'original_file' => $src_path,
+                    'temp_file' => $temp_path,
+                    'verified_dimensions' => [$temp_size[0], $temp_size[1]]
+                ]);
+            }
+            
             // Replace original with successfully resized temp file
             if (!@rename($temp_path, $src_path)) {
                 // Fallback: copy then delete
                 if (@copy($temp_path, $src_path)) {
                     @unlink($temp_path);
+                    
+                    if ($att_id) {
+                        $this->log_resize_debug($att_id, "Resize operation SUCCESS (via copy)", [
+                            'final_dimensions' => [$temp_size[0], $temp_size[1]],
+                            'final_file_size' => filesize($src_path)
+                        ]);
+                    }
+                    
                     return true;
                 } else {
+                    if ($att_id) {
+                        $this->log_resize_debug($att_id, "File replacement FAILED", [
+                            'rename_failed' => true,
+                            'copy_failed' => true,
+                            'temp_path' => $temp_path,
+                            'target_path' => $src_path
+                        ]);
+                    }
+                    
+                    error_log("WebP Migrator: Failed to replace original file {$src_path} with resized version");
+                    
                     // Complete failure, clean up temp file
                     @unlink($temp_path);
                     return false;
                 }
             }
             
+            if ($att_id) {
+                $this->log_resize_debug($att_id, "Resize operation SUCCESS (via rename)", [
+                    'final_dimensions' => [$temp_size[0], $temp_size[1]],
+                    'final_file_size' => filesize($src_path)
+                ]);
+            }
+            
             return true;
             
         } catch (Exception $e) {
+            if ($att_id) {
+                $this->log_resize_debug($att_id, "Resize operation EXCEPTION", [
+                    'exception_class' => get_class($e),
+                    'exception_message' => $e->getMessage(),
+                    'exception_trace' => $e->getTraceAsString(),
+                    'diagnostics' => $diagnostics
+                ]);
+            }
+            
             // Clean up temp file on any exception
             if (file_exists($temp_path)) {
                 @unlink($temp_path);
             }
-            error_log('WebP Migrator: Resize exception - ' . $e->getMessage());
+            error_log('WebP Migrator: Resize exception - ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
             return false;
         }
     }
