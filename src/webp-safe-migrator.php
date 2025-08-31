@@ -31,7 +31,9 @@ class WebP_Safe_Migrator {
     private $runtime_validation_override = null;
 
     public function __construct() {
-        $this->settings = wp_parse_args(get_option(self::OPTION, []), [
+        try {
+            // Initialize settings with error handling
+            $default_settings = [
             'target_format'     => 'webp',      // webp, avif, jxl
             'quality'           => 75,          // General quality setting
             'webp_quality'      => 75,          // WebP-specific quality
@@ -43,23 +45,35 @@ class WebP_Safe_Migrator {
             'validation'        => 1,           // 1 = validate (keep originals), 0 = delete originals immediately
             'skip_folders'      => "",          // textarea, one per line (relative to uploads), substring match
             'skip_mimes'        => "",          // comma/space separated MIME types to skip (e.g. "image/gif")
-            'enable_bounding_box' => 0,        // Enable bounding box resizing
-            'bounding_box_mode' => 'max',      // 'max' = maximum bounding box, 'min' = minimum bounding box
-            'bounding_box_width' => 1920,     // Bounding box width
-            'bounding_box_height' => 1080,    // Bounding box height
-            'check_filename_dimensions' => 0, // Check filename dimensions against actual dimensions
-        ]);
+                'enable_bounding_box' => 0,        // Enable bounding box resizing
+                'bounding_box_mode' => 'max',      // 'max' = maximum bounding box, 'min' = minimum bounding box
+                'bounding_box_width' => 1920,     // Bounding box width
+                'bounding_box_height' => 1080,    // Bounding box height
+                'check_filename_dimensions' => 0, // Check filename dimensions against actual dimensions
+            ];
+            
+            $this->settings = wp_parse_args(get_option(self::OPTION, []), $default_settings);
 
-        add_action('admin_menu', [$this, 'menu']);
-        add_action('admin_init', [$this, 'handle_actions']);
-        add_action('wp_ajax_webp_migrator_process_batch', [$this, 'ajax_process_batch']);
-        add_action('wp_ajax_webp_migrator_get_queue_count', [$this, 'ajax_get_queue_count']);
-        add_action('wp_ajax_webp_migrator_reprocess_single', [$this, 'ajax_reprocess_single']);
-        register_activation_hook(__FILE__, [$this, 'on_activate']);
+            // Register hooks with error handling
+            add_action('admin_menu', [$this, 'menu']);
+            add_action('admin_init', [$this, 'handle_actions']);
+            add_action('wp_ajax_webp_migrator_process_batch', [$this, 'ajax_process_batch']);
+            add_action('wp_ajax_webp_migrator_get_queue_count', [$this, 'ajax_get_queue_count']);
+            add_action('wp_ajax_webp_migrator_reprocess_single', [$this, 'ajax_reprocess_single']);
+            register_activation_hook(__FILE__, [$this, 'on_activate']);
 
-        // WP-CLI
-        if (defined('WP_CLI') && WP_CLI) {
-            WP_CLI::add_command('webp-migrator', ['WebP_Safe_Migrator_CLI', 'dispatch']);
+            // WP-CLI registration moved to after class definition
+        } catch (Throwable $e) {
+            // Log the error but don't crash WordPress
+            error_log('WebP Safe Migrator initialization error: ' . $e->getMessage());
+            
+            // Set minimal safe settings
+            $this->settings = [
+                'target_format' => 'webp',
+                'quality' => 75,
+                'validation' => 1,
+                'batch_size' => 10
+            ];
         }
     }
 
@@ -73,14 +87,19 @@ class WebP_Safe_Migrator {
     }
 
     public function on_activate() {
-        // Check for format support
-        $supported_formats = $this->get_supported_formats();
-        if (empty($supported_formats)) {
+        // Simplified activation check - avoid complex format detection during activation
+        if (!function_exists('imagewebp') && !class_exists('Imagick')) {
             deactivate_plugins(plugin_basename(__FILE__));
-            wp_die('WebP Safe Migrator requires support for at least one modern image format (WebP, AVIF, or JPEG XL).<br>Available extensions: ' . 
-                   (function_exists('imagewebp') ? 'GD-WebP ' : '') .
-                   (class_exists('Imagick') ? 'Imagick ' : '') .
-                   '<br>Please ensure your server has GD or Imagick with modern format support.');
+            wp_die('WebP Safe Migrator requires GD or Imagick support for image processing.');
+        }
+        
+        // Create plugin options if they don't exist
+        if (!get_option(self::OPTION)) {
+            add_option(self::OPTION, [
+                'target_format' => 'webp',
+                'quality' => 75,
+                'validation' => 1
+            ]);
         }
     }
 
@@ -3303,6 +3322,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
      * Render maintenance and statistics tab
      */
     public function render_maintenance_tab() {
+        global $wpdb;
         settings_errors('webp_safe_migrator');
         
         $plugin_stats = $this->get_plugin_statistics();
@@ -3450,14 +3470,25 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         </div>
         <?php
     }
-
-    private function current_validation_mode(): bool {
-        if ($this->runtime_validation_override !== null) return (bool)$this->runtime_validation_override;
-        return (bool)$this->settings['validation'];
-    }
 }
 
+// Safe plugin initialization with error handling
+try {
 $GLOBALS['webp_safe_migrator'] = new WebP_Safe_Migrator();
+} catch (Throwable $e) {
+    // Log the error but don't crash WordPress
+    error_log('WebP Safe Migrator failed to initialize: ' . $e->getMessage());
+    
+    // Create a minimal fallback instance
+    $GLOBALS['webp_safe_migrator'] = null;
+    
+    // Add admin notice about the error
+    add_action('admin_notices', function() use ($e) {
+        if (current_user_can('activate_plugins')) {
+            echo '<div class="notice notice-error"><p><strong>WebP Safe Migrator Error:</strong> ' . esc_html($e->getMessage()) . '</p></div>';
+        }
+    });
+}
 
 /**
  * WP-CLI handler
@@ -3467,7 +3498,7 @@ $GLOBALS['webp_safe_migrator'] = new WebP_Safe_Migrator();
  *   wp webp-migrator run --batch=25 --format=avif --quality=60
  *   wp webp-migrator run --format=jxl --quality=80 --effort=8
  */
-if (defined('WP_CLI') && WP_CLI) {
+if (defined('WP_CLI') && WP_CLI && class_exists('WP_CLI')) {
     class WebP_Safe_Migrator_CLI {
         public static function dispatch($args, $assoc_args) {
             $sub = array_shift($args) ?: 'run';
@@ -3477,7 +3508,10 @@ if (defined('WP_CLI') && WP_CLI) {
 
         public static function run($assoc_args) {
             $plugin = WebP_Safe_Migrator::instance();
-            if (!$plugin) WP_CLI::error('Plugin not loaded.');
+            if (!$plugin) {
+                WP_CLI::error('Plugin not loaded or failed to initialize.');
+                return;
+            }
 
             $settings = get_option(WebP_Safe_Migrator::OPTION, []);
             
@@ -3539,4 +3573,7 @@ if (defined('WP_CLI') && WP_CLI) {
             WP_CLI::success("Processed {$processed}/".count($ids)." attachments to " . strtoupper($target_format) . " format (Quality: {$quality}{$format_details}). Validation: ".($validate ? 'ON' : 'OFF'));
         }
     }
+    
+    // Register WP-CLI command after class is defined
+    WP_CLI::add_command('webp-migrator', ['WebP_Safe_Migrator_CLI', 'dispatch']);
 }
