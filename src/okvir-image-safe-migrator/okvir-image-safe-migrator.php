@@ -148,6 +148,30 @@ class Okvir_Image_Safe_Migrator {
         return $supported;
     }
 
+    /**
+     * Get format-specific options for conversion
+     */
+    private function get_format_options($target_format, $override_quality = null): array {
+        $options = [];
+        $format_key = $target_format . '_quality';
+        
+        // Use override quality if provided, otherwise use format-specific setting
+        $options['quality'] = $override_quality ?? ($this->settings[$format_key] ?? 
+                             self::SUPPORTED_TARGET_FORMATS[$target_format]['default_quality']);
+        
+        // Add format-specific options
+        switch ($target_format) {
+            case 'avif':
+                $options['speed'] = $this->settings['avif_speed'] ?? 6;
+                break;
+            case 'jxl':
+                $options['effort'] = $this->settings['jxl_effort'] ?? 7;
+                break;
+        }
+        
+        return $options;
+    }
+
     public function menu() {
         add_media_page(
             'Okvir Image Safe Migrator', 
@@ -156,6 +180,53 @@ class Okvir_Image_Safe_Migrator {
             'okvir-image-safe-migrator', 
             [$this, 'render_tabbed_interface']
         );
+    }
+
+    private function update_settings_from_request() {
+        if (!current_user_can('manage_options')) return;
+        if (!isset($_POST[self::NONCE]) || !wp_verify_nonce($_POST[self::NONCE], 'save_settings')) return;
+
+        $target_format  = isset($_POST['target_format']) && array_key_exists($_POST['target_format'], self::SUPPORTED_TARGET_FORMATS) 
+                          ? (string)$_POST['target_format'] : 'webp';
+        $quality        = isset($_POST['quality']) ? max(1, min(100, (int)$_POST['quality'])) : 75;
+        $webp_quality   = isset($_POST['webp_quality']) ? max(1, min(100, (int)$_POST['webp_quality'])) : 75;
+        $avif_quality   = isset($_POST['avif_quality']) ? max(1, min(100, (int)$_POST['avif_quality'])) : 60;
+        $avif_speed     = isset($_POST['avif_speed']) ? max(0, min(10, (int)$_POST['avif_speed'])) : 6;
+        $jxl_quality    = isset($_POST['jxl_quality']) ? max(1, min(100, (int)$_POST['jxl_quality'])) : 80;
+        $jxl_effort     = isset($_POST['jxl_effort']) ? max(1, min(9, (int)$_POST['jxl_effort'])) : 7;
+        $batch_size     = isset($_POST['batch_size']) ? max(1, min(1000, (int)$_POST['batch_size'])) : 10;
+        $validation     = isset($_POST['validation']) ? 1 : 0;
+
+        $skip_folders_raw = isset($_POST['skip_folders']) ? (string)$_POST['skip_folders'] : '';
+        $skip_mimes_raw   = isset($_POST['skip_mimes']) ? (string)$_POST['skip_mimes'] : '';
+        
+        $enable_bounding_box = isset($_POST['enable_bounding_box']) ? 1 : 0;
+        $bounding_box_mode = isset($_POST['bounding_box_mode']) && in_array($_POST['bounding_box_mode'], ['max', 'min']) 
+                           ? (string)$_POST['bounding_box_mode'] : 'max';
+        $bounding_box_width = isset($_POST['bounding_box_width']) ? max(50, min(10000, (int)$_POST['bounding_box_width'])) : 1920;
+        $bounding_box_height = isset($_POST['bounding_box_height']) ? max(50, min(10000, (int)$_POST['bounding_box_height'])) : 1080;
+        $check_filename_dimensions = isset($_POST['check_filename_dimensions']) ? 1 : 0;
+
+        $this->settings = [
+            'target_format'     => $target_format,
+            'quality'           => $quality,
+            'webp_quality'      => $webp_quality,
+            'avif_quality'      => $avif_quality,
+            'avif_speed'        => $avif_speed,
+            'jxl_quality'       => $jxl_quality,
+            'jxl_effort'        => $jxl_effort,
+            'batch_size'        => $batch_size,
+            'validation'        => $validation,
+            'skip_folders'      => $skip_folders_raw,
+            'skip_mimes'        => $skip_mimes_raw,
+            'enable_bounding_box' => $enable_bounding_box,
+            'bounding_box_mode' => $bounding_box_mode,
+            'bounding_box_width' => $bounding_box_width,
+            'bounding_box_height' => $bounding_box_height,
+            'check_filename_dimensions' => $check_filename_dimensions,
+        ];
+        update_option(self::OPTION, $this->settings);
+        add_settings_error('okvir_image_safe_migrator', 'saved', 'Settings saved.', 'updated');
     }
 
     public function handle_actions() {
@@ -178,7 +249,175 @@ class Okvir_Image_Safe_Migrator {
             add_settings_error('okvir_image_safe_migrator', 'batch', "Batch processed ({$processed}/".count($batch).").", 'updated');
         }
 
-        // Add more action handlers as we expand functionality
+        // Commit one
+        if (isset($_POST['okvir_migrator_commit_one']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'commit_one')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            $ok = $this->commit_deletions($att_id);
+            if ($ok) {
+                add_settings_error('okvir_image_safe_migrator', 'commit', "Committed deletions for attachment #{$att_id}.", 'updated');
+            } else {
+                add_settings_error('okvir_image_safe_migrator', 'commit_err', "Nothing to delete or commit failed for #{$att_id}.", 'error');
+            }
+        }
+
+        // Commit all
+        if (isset($_POST['okvir_migrator_commit_all']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'commit_all')) {
+            global $wpdb;
+            $ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT p.ID FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} pm ON p.ID=pm.post_id
+                 WHERE p.post_type='attachment' AND pm.meta_key=%s AND pm.meta_value='relinked'",
+                 self::STATUS_META
+            ));
+            $count = 0;
+            foreach ($ids as $att_id) {
+                if ($this->commit_deletions((int)$att_id)) $count++;
+            }
+            add_settings_error('okvir_image_safe_migrator', 'commit_all', "Committed deletions for {$count} attachments.", 'updated');
+        }
+
+        // Handle dimension inconsistency actions
+        $this->handle_dimension_actions();
+        
+        // Handle conversion error actions
+        $this->handle_error_actions();
+        
+        // Handle maintenance actions
+        $this->handle_maintenance_actions();
+    }
+
+    private function handle_dimension_actions() {
+        if (!current_user_can('manage_options')) return;
+
+        // Clear all dimension inconsistencies
+        if (isset($_POST['clear_all_dimensions']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'clear_dimensions')) {
+            $uploads = wp_get_upload_dir();
+            $log_file = trailingslashit($uploads['basedir']) . 'okvir-image-migrator-dimension-inconsistencies.json';
+            if (file_exists($log_file)) {
+                @unlink($log_file);
+                add_settings_error('okvir_image_safe_migrator', 'cleared_all', 'All dimension inconsistencies cleared.', 'updated');
+            }
+        }
+
+        // Remove specific dimension inconsistency
+        if (isset($_POST['remove_dimension']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'remove_dimension')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            if ($att_id > 0) {
+                $removed = $this->remove_dimension_inconsistency($att_id);
+                if ($removed) {
+                    add_settings_error('okvir_image_safe_migrator', 'removed', "Removed dimension inconsistency for attachment #{$att_id}.", 'updated');
+                } else {
+                    add_settings_error('okvir_image_safe_migrator', 'not_found', "Dimension inconsistency for attachment #{$att_id} not found.", 'error');
+                }
+            }
+        }
+    }
+
+    private function handle_error_actions() {
+        if (!current_user_can('manage_options')) return;
+
+        // Clear all conversion errors
+        if (isset($_POST['clear_all_errors']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'clear_errors')) {
+            $uploads = wp_get_upload_dir();
+            $log_file = trailingslashit($uploads['basedir']) . 'okvir-image-migrator-conversion-errors.json';
+            if (file_exists($log_file)) {
+                @unlink($log_file);
+                add_settings_error('okvir_image_safe_migrator', 'cleared_errors', 'All conversion errors cleared.', 'updated');
+            }
+        }
+
+        // Remove specific conversion error
+        if (isset($_POST['remove_error']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'remove_error')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            if ($att_id > 0) {
+                $removed = $this->remove_conversion_error($att_id);
+                if ($removed) {
+                    delete_post_meta($att_id, self::ERROR_META);
+                    add_settings_error('okvir_image_safe_migrator', 'removed_error', "Removed conversion error for attachment #{$att_id}.", 'updated');
+                } else {
+                    add_settings_error('okvir_image_safe_migrator', 'error_not_found', "Conversion error for attachment #{$att_id} not found.", 'error');
+                }
+            }
+        }
+
+        // Retry failed conversion
+        if (isset($_POST['retry_conversion']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'retry_conversion')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            if ($att_id > 0) {
+                $retried = $this->process_attachment($att_id, $this->settings['quality'], $this->current_validation_mode());
+                if ($retried) {
+                    add_settings_error('okvir_image_safe_migrator', 'retried_ok', "Successfully retried conversion for attachment #{$att_id}.", 'updated');
+                } else {
+                    add_settings_error('okvir_image_safe_migrator', 'retry_failed', "Retry failed for attachment #{$att_id}.", 'error');
+                }
+            }
+        }
+
+        // Rollback single conversion
+        if (isset($_POST['rollback_single']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'rollback_single')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            if ($att_id > 0) {
+                $rolled_back = $this->rollback_conversion($att_id);
+                if ($rolled_back) {
+                    add_settings_error('okvir_image_safe_migrator', 'rolled_back', "Successfully rolled back conversion for attachment #{$att_id}.", 'updated');
+                } else {
+                    add_settings_error('okvir_image_safe_migrator', 'rollback_failed', "Rollback failed for attachment #{$att_id} - backup may not exist.", 'error');
+                }
+            }
+        }
+
+        // Rollback all pending conversions
+        if (isset($_POST['rollback_all_pending']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'rollback_all')) {
+            global $wpdb;
+            $ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT p.ID FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} pm ON p.ID=pm.post_id
+                 WHERE p.post_type='attachment' AND pm.meta_key=%s AND pm.meta_value='relinked'",
+                 self::STATUS_META
+            ));
+            $count = 0;
+            foreach ($ids as $att_id) {
+                if ($this->rollback_conversion((int)$att_id)) $count++;
+            }
+            add_settings_error('okvir_image_safe_migrator', 'rollback_all', "Rolled back conversions for {$count} attachments.", 'updated');
+        }
+    }
+    
+    private function handle_maintenance_actions() {
+        if (!current_user_can('manage_options')) return;
+
+        // Clean up orphaned metadata
+        if (isset($_POST['cleanup_metadata']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'cleanup_metadata')) {
+            $cleaned = $this->cleanup_orphaned_metadata();
+            if ($cleaned > 0) {
+                add_settings_error('okvir_image_safe_migrator', 'cleanup_done', "Cleaned up {$cleaned} orphaned metadata entries and directories.", 'updated');
+            } else {
+                add_settings_error('okvir_image_safe_migrator', 'cleanup_nothing', "No orphaned metadata found to clean up.", 'updated');
+            }
+        }
+
+        // Reset all statistics  
+        if (isset($_POST['reset_statistics']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'reset_statistics')) {
+            delete_option('okvir_image_migrator_statistics');
+            add_settings_error('okvir_image_safe_migrator', 'stats_reset', "All conversion statistics have been reset.", 'updated');
+        }
+
+        // Clear all completed conversion data
+        if (isset($_POST['clear_completed_data']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'clear_completed')) {
+            global $wpdb;
+            $cleared = $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value = 'committed'",
+                self::STATUS_META
+            ));
+            if ($cleared > 0) {
+                add_settings_error('okvir_image_safe_migrator', 'completed_cleared', "Cleared {$cleared} completed conversion records.", 'updated');
+            } else {
+                add_settings_error('okvir_image_safe_migrator', 'no_completed', "No completed conversion records found to clear.", 'updated');
+            }
+        }
+    }
+
+    private function current_validation_mode(): bool {
+        if ($this->runtime_validation_override !== null) return (bool)$this->runtime_validation_override;
+        return (bool)$this->settings['validation'];
     }
 
     public function render_tabbed_interface() {
@@ -243,6 +482,208 @@ class Okvir_Image_Safe_Migrator {
         <?php
     }
 
-    // I need to continue building the functionality gradually...
-    // Let me create the rest of the file in a follow-up write operation
-}
+    public function render_settings_tab() {
+        settings_errors('okvir_image_safe_migrator');
+        $target_format = (string)($this->settings['target_format'] ?? 'webp');
+        $quality       = (int)$this->settings['quality'];
+        $webp_quality  = (int)($this->settings['webp_quality'] ?? 75);
+        $avif_quality  = (int)($this->settings['avif_quality'] ?? 60);
+        $avif_speed    = (int)($this->settings['avif_speed'] ?? 6);
+        $jxl_quality   = (int)($this->settings['jxl_quality'] ?? 80);
+        $jxl_effort    = (int)($this->settings['jxl_effort'] ?? 7);
+        $batch_size    = (int)$this->settings['batch_size'];
+        $validation    = (int)$this->settings['validation'];
+        $skip_folders  = (string)$this->settings['skip_folders'];
+        $skip_mimes    = (string)$this->settings['skip_mimes'];
+        $enable_bounding_box = (int)($this->settings['enable_bounding_box'] ?? 0);
+        $bounding_box_mode = (string)($this->settings['bounding_box_mode'] ?? 'max');
+        $bounding_box_width = (int)($this->settings['bounding_box_width'] ?? 1920);
+        $bounding_box_height = (int)($this->settings['bounding_box_height'] ?? 1080);
+        $check_filename_dimensions = (int)($this->settings['check_filename_dimensions'] ?? 0);
+        
+        $supported_formats = $this->get_supported_formats();
+        ?>
+        <h2>Settings & Configuration</h2>
+        <p>Configure format conversion settings and manage your image processing queue.</p>
+
+            <form method="post">
+                <?php wp_nonce_field('save_settings', self::NONCE); ?>
+                <table class="form-table" role="presentation">
+                    <tr><th scope="row"><label for="target_format">Target Format</label></th>
+                        <td>
+                            <select name="target_format" id="target_format" onchange="toggleFormatOptions(this.value)">
+                                <?php foreach ($supported_formats as $format => $info): ?>
+                                    <option value="<?php echo esc_attr($format); ?>" <?php selected($target_format, $format); ?>>
+                                        <?php echo esc_html(strtoupper($format)); ?> 
+                                        (<?php echo esc_html($info['mime']); ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Modern format to convert images to. Server support detected automatically.</p>
+                        </td>
+                    </tr>
+                    
+                    <tr><th scope="row"><label for="quality">Default Quality (1–100)</label></th>
+                        <td><input type="number" name="quality" id="quality" min="1" max="100" value="<?php echo esc_attr($quality); ?>">
+                        <p class="description">General quality setting used when format-specific quality isn't set.</p></td>
+                    </tr>
+                    
+                    <!-- WebP Settings -->
+                    <tr class="format-settings webp-settings" style="<?php echo $target_format !== 'webp' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="webp_quality">WebP Quality (1–100)</label></th>
+                        <td><input type="number" name="webp_quality" id="webp_quality" min="1" max="100" value="<?php echo esc_attr($webp_quality); ?>">
+                        <p class="description">WebP compression quality. Higher = better quality, larger files.</p></td>
+                    </tr>
+                    
+                    <!-- AVIF Settings -->
+                    <tr class="format-settings avif-settings" style="<?php echo $target_format !== 'avif' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="avif_quality">AVIF Quality (1–100)</label></th>
+                        <td><input type="number" name="avif_quality" id="avif_quality" min="1" max="100" value="<?php echo esc_attr($avif_quality); ?>">
+                        <p class="description">AVIF compression quality. AVIF typically achieves better quality at lower values than WebP.</p></td>
+                    </tr>
+                    <tr class="format-settings avif-settings" style="<?php echo $target_format !== 'avif' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="avif_speed">AVIF Speed (0–10)</label></th>
+                        <td><input type="number" name="avif_speed" id="avif_speed" min="0" max="10" value="<?php echo esc_attr($avif_speed); ?>">
+                        <p class="description">Compression speed vs efficiency. 0=slowest/best, 10=fastest/lower quality. 6 is balanced.</p></td>
+                    </tr>
+                    
+                    <!-- JPEG XL Settings -->
+                    <tr class="format-settings jxl-settings" style="<?php echo $target_format !== 'jxl' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="jxl_quality">JPEG XL Quality (1–100)</label></th>
+                        <td><input type="number" name="jxl_quality" id="jxl_quality" min="1" max="100" value="<?php echo esc_attr($jxl_quality); ?>">
+                        <p class="description">JPEG XL compression quality. Higher values provide better quality.</p></td>
+                    </tr>
+                    <tr class="format-settings jxl-settings" style="<?php echo $target_format !== 'jxl' ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="jxl_effort">JPEG XL Effort (1–9)</label></th>
+                        <td><input type="number" name="jxl_effort" id="jxl_effort" min="1" max="9" value="<?php echo esc_attr($jxl_effort); ?>">
+                        <p class="description">Compression effort. Higher values take longer but achieve better compression.</p></td>
+                    </tr>
+                    
+                    <tr><th scope="row"><label for="batch_size">Batch size</label></th>
+                        <td><input type="number" name="batch_size" id="batch_size" min="1" max="1000" value="<?php echo esc_attr($batch_size); ?>"></td>
+                    </tr>
+                    <tr><th scope="row"><label for="validation">Validation mode</label></th>
+                        <td><label><input type="checkbox" name="validation" <?php checked($validation, 1); ?>> Keep originals until you press "Commit"</label></td>
+                    </tr>
+                    <tr><th scope="row"><label for="skip_folders">Skip folders</label></th>
+                        <td>
+                            <textarea name="skip_folders" id="skip_folders" rows="4" cols="50" placeholder="e.g. cache
+private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
+                            <p class="description">One per line, relative to <code>wp-content/uploads</code>. Substring match, case-insensitive.</p>
+                        </td>
+                    </tr>
+                    <tr><th scope="row"><label for="skip_mimes">Skip MIME types</label></th>
+                        <td>
+                            <input type="text" name="skip_mimes" id="skip_mimes" value="<?php echo esc_attr($skip_mimes); ?>" placeholder="e.g. image/gif">
+                            <p class="description">Comma/space separated list (e.g. <code>image/gif, image/png</code>)</p>
+                        </td>
+                    </tr>
+                </table>
+
+                <h3>Image Resizing Options</h3>
+                <table class="form-table" role="presentation">
+                    <tr><th scope="row"><label for="enable_bounding_box">Enable Bounding Box Resizing</label></th>
+                        <td>
+                            <label><input type="checkbox" name="enable_bounding_box" id="enable_bounding_box" <?php checked($enable_bounding_box, 1); ?> onchange="toggleBoundingBoxOptions(this.checked)"> Enable automatic resizing based on bounding box constraints</label>
+                            <p class="description">When enabled, images will be resized according to the bounding box settings below.</p>
+                        </td>
+                    </tr>
+                    
+                    <tr class="bounding-box-settings" style="<?php echo !$enable_bounding_box ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="bounding_box_mode">Bounding Box Mode</label></th>
+                        <td>
+                            <select name="bounding_box_mode" id="bounding_box_mode">
+                                <option value="max" <?php selected($bounding_box_mode, 'max'); ?>>Maximum Bounding Box (scale down if larger)</option>
+                                <option value="min" <?php selected($bounding_box_mode, 'min'); ?>>Minimum Bounding Box (scale up if smaller)</option>
+                            </select>
+                        </td>
+                    </tr>
+                    
+                    <tr class="bounding-box-settings" style="<?php echo !$enable_bounding_box ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="bounding_box_width">Bounding Box Width</label></th>
+                        <td>
+                            <input type="number" name="bounding_box_width" id="bounding_box_width" min="50" max="10000" value="<?php echo esc_attr($bounding_box_width); ?>"> pixels
+                        </td>
+                    </tr>
+                    
+                    <tr class="bounding-box-settings" style="<?php echo !$enable_bounding_box ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="bounding_box_height">Bounding Box Height</label></th>
+                        <td>
+                            <input type="number" name="bounding_box_height" id="bounding_box_height" min="50" max="10000" value="<?php echo esc_attr($bounding_box_height); ?>"> pixels
+                        </td>
+                    </tr>
+                    
+                    <tr><th scope="row"><label for="check_filename_dimensions">Check Filename Dimensions</label></th>
+                        <td>
+                            <label><input type="checkbox" name="check_filename_dimensions" <?php checked($check_filename_dimensions, 1); ?>> Detect and validate dimensions in filenames</label>
+                            <p class="description">Parse dimensions from filenames (e.g., "image-1920x1080.jpg") and log inconsistencies with actual image dimensions (±5px tolerance).</p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <script type="text/javascript">
+                function toggleFormatOptions(format) {
+                    var allSettings = document.querySelectorAll('.format-settings');
+                    allSettings.forEach(function(el) { el.style.display = 'none'; });
+                    
+                    var formatSettings = document.querySelectorAll('.' + format + '-settings');
+                    formatSettings.forEach(function(el) { el.style.display = 'table-row'; });
+                }
+                
+                function toggleBoundingBoxOptions(enabled) {
+                    var boundingBoxSettings = document.querySelectorAll('.bounding-box-settings');
+                    boundingBoxSettings.forEach(function(el) {
+                        el.style.display = enabled ? 'table-row' : 'none';
+                    });
+                }
+                
+                document.addEventListener('DOMContentLoaded', function() {
+                    var format = document.getElementById('target_format').value;
+                    toggleFormatOptions(format);
+                    
+                    var boundingBoxEnabled = document.getElementById('enable_bounding_box').checked;
+                    toggleBoundingBoxOptions(boundingBoxEnabled);
+                });
+                </script>
+                
+                <p>
+                    <button class="button button-primary" name="okvir_migrator_save_settings" value="1">Save settings</button>
+                </p>
+            </form>
+
+            <hr/>
+            <h2>Run batch</h2>
+            <p><strong>Tip:</strong> back up your database and uploads before large migrations.</p>
+            <p><strong>Current target:</strong> Converting to <strong><?php echo esc_html(strtoupper($target_format)); ?></strong> format</p>
+            <form method="post" style="margin-bottom: 10px;">
+                <?php wp_nonce_field('run_batch', self::NONCE); ?>
+                <button class="button button-secondary" name="okvir_migrator_run" value="1">Process next batch</button>
+                <a class="button button-primary" href="?page=okvir-image-safe-migrator&tab=batch">AJAX Batch Processor</a>
+            </form>
+            
+            <p>
+                <a class="button" href="?page=okvir-image-safe-migrator&tab=reports">View Reports</a>
+                <a class="button" href="?page=okvir-image-safe-migrator&tab=errors">Manage Errors</a>
+                <a class="button" href="?page=okvir-image-safe-migrator&tab=reprocess">Reprocess Errors</a>
+            </p>
+
+            <hr/>
+            <h2>Pending commits</h2>
+            <?php $this->render_pending_commits(); ?>
+
+            <hr/>
+            <h2>Images to convert (preview)</h2>
+            <p>Showing images that will be converted to <strong><?php echo esc_html(strtoupper($target_format)); ?></strong> format:</p>
+            <?php $this->render_queue_preview(); ?>
+            
+            <?php if (!empty($this->settings['check_filename_dimensions'])): ?>
+                <hr/>
+                <h2>Dimension Inconsistencies</h2>
+                <?php $this->render_dimension_inconsistencies_summary(); ?>
+            <?php endif; ?>
+            
+            <hr/>
+            <h2>Conversion Errors</h2>
+            <?php $this->render_conversion_errors_summary(); ?>
+        <?php
+    }
