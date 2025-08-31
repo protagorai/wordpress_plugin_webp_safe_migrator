@@ -198,7 +198,7 @@ if errorlevel 1 (
     
     REM Use working deployment script
     echo * Reading deployment configuration for development profile...
-    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-working.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
+    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-new.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
     
     if errorlevel 1 (
         echo ! Configuration-driven deployment failed, falling back to manual plugin installation...
@@ -331,7 +331,7 @@ if "%2"=="" (
     powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "list"
 ) else if "%2"=="deploy" (
     echo * Deploying plugins to running container...
-    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-working.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
+    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-new.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
 ) else if "%2"=="activate" (
     if "%3"=="" (
         echo * Showing current plugin status...

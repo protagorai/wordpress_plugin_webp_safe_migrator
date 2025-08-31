@@ -1642,26 +1642,69 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     );
                     
                     if ($new_width != $current_width || $new_height != $current_height) {
-                        $resized = $this->resize_image($new_path, $new_width, $new_height);
-                        if (!$resized) {
-                            $this->log_conversion_error($att_id, "Failed to resize image to {$new_width}x{$new_height}", 'bounding_box_resize', [
-                                'original_dimensions' => [$current_width, $current_height],
-                                'target_dimensions' => [$new_width, $new_height],
-                                'bounding_box_mode' => $box_mode,
-                                'bounding_box_size' => [$box_width, $box_height]
+                        // SAFETY CHECK: Verify file exists and is valid before resizing
+                        if (!file_exists($new_path) || !is_readable($new_path)) {
+                            $this->log_conversion_error($att_id, "Cannot resize - converted file is missing or unreadable", 'bounding_box_resize', [
+                                'converted_path' => $new_path,
+                                'file_exists' => file_exists($new_path),
+                                'is_readable' => is_readable($new_path)
                             ]);
-                            // Don't return false here - continue with original size
+                        } else {
+                            // Create backup of pre-resize file for rollback capability
+                            $pre_resize_backup = $new_path . '.pre-resize.' . uniqid();
+                            $backup_created = @copy($new_path, $pre_resize_backup);
+                            
+                            $resized = $this->resize_image($new_path, $new_width, $new_height);
+                            if (!$resized) {
+                                $this->log_conversion_error($att_id, "Failed to resize image to {$new_width}x{$new_height}", 'bounding_box_resize', [
+                                    'original_dimensions' => [$current_width, $current_height],
+                                    'target_dimensions' => [$new_width, $new_height],
+                                    'bounding_box_mode' => $box_mode,
+                                    'bounding_box_size' => [$box_width, $box_height]
+                                ]);
+                                
+                                // ROLLBACK: Restore pre-resize file if backup exists
+                                if ($backup_created && file_exists($pre_resize_backup)) {
+                                    if (@copy($pre_resize_backup, $new_path)) {
+                                        error_log("WebP Migrator: Restored pre-resize backup for attachment #{$att_id}");
+                                    }
+                                }
+                            } else {
+                                // Verify the resize was successful by checking dimensions
+                                $verify_size = @getimagesize($new_path);
+                                if (!$verify_size || abs($verify_size[0] - $new_width) > 1 || abs($verify_size[1] - $new_height) > 1) {
+                                    $this->log_conversion_error($att_id, "Resize verification failed - dimensions don't match", 'bounding_box_resize', [
+                                        'expected_dimensions' => [$new_width, $new_height],
+                                        'actual_dimensions' => $verify_size ? [$verify_size[0], $verify_size[1]] : null
+                                    ]);
+                                    
+                                    // ROLLBACK: Restore pre-resize file
+                                    if ($backup_created && file_exists($pre_resize_backup)) {
+                                        if (@copy($pre_resize_backup, $new_path)) {
+                                            error_log("WebP Migrator: Restored pre-resize backup after verification failure for attachment #{$att_id}");
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Clean up backup file
+                            if ($backup_created && file_exists($pre_resize_backup)) {
+                                @unlink($pre_resize_backup);
+                            }
                         }
                     }
                 } else {
                     $this->log_conversion_error($att_id, 'Could not get image dimensions for bounding box resize', 'bounding_box_resize', [
-                        'converted_path' => $new_path
+                        'converted_path' => $new_path,
+                        'file_exists' => file_exists($new_path),
+                        'file_size' => file_exists($new_path) ? filesize($new_path) : 0
                     ]);
                     // Don't return false here - continue without resize
                 }
             } catch (Exception $e) {
                 $this->log_conversion_error($att_id, 'Bounding box resize exception: ' . $e->getMessage(), 'bounding_box_resize', [
-                    'exception_class' => get_class($e)
+                    'exception_class' => get_class($e),
+                    'exception_trace' => $e->getTraceAsString()
                 ]);
                 // Don't return false here - continue without resize
             }
@@ -1964,21 +2007,67 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     }
     
     /**
-     * Resize image using WordPress image editor
+     * Resize image using WordPress image editor - SAFE VERSION
+     * Uses temporary file to prevent corruption of source file
      */
     private function resize_image($src_path, $new_width, $new_height) {
-        $editor = wp_get_image_editor($src_path);
-        if (is_wp_error($editor)) {
+        // Create temporary file for safe resizing
+        $temp_path = $src_path . '.tmp.' . uniqid();
+        
+        try {
+            $editor = wp_get_image_editor($src_path);
+            if (is_wp_error($editor)) {
+                return false;
+            }
+            
+            $resized = $editor->resize($new_width, $new_height, false); // false = don't crop, just resize
+            if (is_wp_error($resized)) {
+                return false;
+            }
+            
+            // Save to temporary file first
+            $saved = $editor->save($temp_path);
+            if (is_wp_error($saved)) {
+                // Clean up temp file on failure
+                if (file_exists($temp_path)) {
+                    @unlink($temp_path);
+                }
+                return false;
+            }
+            
+            // Verify temp file is valid before replacing original
+            $temp_size = @getimagesize($temp_path);
+            if (!$temp_size || $temp_size[0] != $new_width || $temp_size[1] != $new_height) {
+                // Temp file is invalid, clean up and fail
+                if (file_exists($temp_path)) {
+                    @unlink($temp_path);
+                }
+                return false;
+            }
+            
+            // Replace original with successfully resized temp file
+            if (!@rename($temp_path, $src_path)) {
+                // Fallback: copy then delete
+                if (@copy($temp_path, $src_path)) {
+                    @unlink($temp_path);
+                    return true;
+                } else {
+                    // Complete failure, clean up temp file
+                    @unlink($temp_path);
+                    return false;
+                }
+            }
+            
+            return true;
+            
+        } catch (Exception $e) {
+            // Clean up temp file on any exception
+            if (file_exists($temp_path)) {
+                @unlink($temp_path);
+            }
+            error_log('WebP Migrator: Resize exception - ' . $e->getMessage());
             return false;
         }
-        
-        $resized = $editor->resize($new_width, $new_height, false); // false = don't crop, just resize
-        if (is_wp_error($resized)) {
-            return false;
-        }
-        
-        $saved = $editor->save($src_path); // Overwrite the source file
-        return !is_wp_error($saved);
     }
     
     /**
@@ -2958,12 +3047,12 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             'processed' => $processed,
             'errors' => $errors,
             'results' => $results,
-            'remaining' => count($this->get_non_target_format_attachments(1000, true)) // Get estimate
+            'remaining' => count($this->get_non_target_format_attachments(10000, true)) // Get estimate with safety limit
         ]);
     }
     
     /**
-     * AJAX handler for getting queue count
+     * AJAX handler for getting queue count with safety limits
      */
     public function ajax_get_queue_count() {
         check_ajax_referer('okvir_image_migrator_batch', 'nonce');
@@ -2972,8 +3061,30 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             wp_die('Insufficient permissions');
         }
         
-        $count = count($this->get_non_target_format_attachments(1000, true));
-        wp_send_json_success(['count' => $count]);
+        // Check if user wants to override safety limit
+        $override_limit = isset($_POST['override_limit']) && $_POST['override_limit'] === 'true';
+        $max_count = $override_limit ? 999999 : 10000; // Default limit 10k, or unlimited with override
+        
+        // Start timing the query
+        $start_time = microtime(true);
+        
+        try {
+            $count = count($this->get_non_target_format_attachments($max_count, true));
+            $query_time = round((microtime(true) - $start_time) * 1000); // Convert to milliseconds
+            
+            wp_send_json_success([
+                'count' => $count,
+                'limited' => !$override_limit && $count >= 10000,
+                'override_available' => !$override_limit,
+                'query_time_ms' => $query_time,
+                'safety_limit' => $override_limit ? false : 10000
+            ]);
+        } catch (Exception $e) {
+            wp_send_json_error([
+                'message' => 'Failed to count images: ' . $e->getMessage(),
+                'query_time_ms' => round((microtime(true) - $start_time) * 1000)
+            ]);
+        }
     }
     
     /**
@@ -3029,7 +3140,33 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             <div id="batch-status" style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; background: #f9f9f9;">
                 <p><strong>Current settings:</strong> Converting to <strong><?php echo esc_html($target_format); ?></strong> format at <strong><?php echo esc_attr($quality); ?>%</strong> quality</p>
                 <p><strong>Validation mode:</strong> <?php echo $validation ? 'Enabled (originals preserved)' : 'Disabled (originals deleted immediately)'; ?></p>
-                <p id="queue-count">Loading queue count...</p>
+                
+                <div id="queue-count-container">
+                    <p id="queue-count">
+                        <span class="dashicons dashicons-update spin" style="color: #0073aa;"></span>
+                        <span id="count-status">Counting images, please wait...</span>
+                        <button id="cancel-count" class="button button-small" style="margin-left: 10px; display: none;">Cancel</button>
+                    </p>
+                    <div id="safety-warning" style="display: none; padding: 10px; margin: 10px 0; border: 2px solid #d63638; background: #ffeaea; color: #d63638;">
+                        <p><strong>⚠️ Large Database Warning:</strong> Your database contains 10,000+ images. Processing all at once may:</p>
+                        <ul style="margin: 5px 0 5px 20px;">
+                            <li>Take several hours to complete</li>
+                            <li>Consume significant server resources</li>
+                            <li>Risk timeout errors on shared hosting</li>
+                        </ul>
+                        <p><strong>Recommendation:</strong> Process in smaller batches or during low-traffic periods.</p>
+                    </div>
+                    <div id="override-controls" style="display: none; padding: 10px; margin: 10px 0; border: 1px solid #ffb900; background: #fff8e5;">
+                        <label>
+                            <input type="checkbox" id="override-limit" style="margin-right: 5px;">
+                            Remove 10,000 image safety limit (process all images)
+                        </label>
+                        <p style="margin: 5px 0 0 0; font-size: 13px; color: #666;">
+                            <strong>Warning:</strong> This will attempt to process your entire image library. 
+                            Only enable if you have sufficient server resources and time.
+                        </p>
+                    </div>
+                </div>
             </div>
             
             <div id="batch-controls" style="margin: 20px 0;">
@@ -3039,10 +3176,13 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     <option value="5" selected>5 images</option>
                     <option value="10">10 images</option>
                     <option value="20">20 images</option>
+                    <option value="50">50 images</option>
+                    <option value="100">100 images</option>
                 </select>
                 
-                <button id="start-batch" class="button button-primary" style="margin-left: 10px;">Start Batch Processing</button>
+                <button id="start-batch" class="button button-primary" style="margin-left: 10px;" disabled>Start Batch Processing</button>
                 <button id="stop-batch" class="button" style="margin-left: 10px; display: none;">Stop Processing</button>
+                <button id="recount-images" class="button" style="margin-left: 10px;">Recount Images</button>
             </div>
             
             <div id="progress-container" style="display: none; margin: 20px 0;">
@@ -3085,17 +3225,92 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 var initialQueueCount = 0;
                 var batchTimeout = 300000; // 5 minutes timeout per batch
                 
-                // Load initial queue count
-                function loadQueueCount() {
-                    $.post(ajaxurl, {
+                // Load queue count with safety features and loading UI
+                var countRequest = null;
+                var countingInProgress = false;
+                
+                function loadQueueCount(overrideLimit) {
+                    if (countingInProgress) {
+                        return; // Prevent multiple simultaneous requests
+                    }
+                    
+                    countingInProgress = true;
+                    overrideLimit = overrideLimit || false;
+                    
+                    // Show loading UI
+                    $('#count-status').text('Counting images, please wait...');
+                    $('.dashicons-update').show().addClass('spin');
+                    $('#cancel-count').show();
+                    $('#start-batch').prop('disabled', true);
+                    $('#recount-images').prop('disabled', true);
+                    $('#safety-warning').hide();
+                    $('#override-controls').hide();
+                    
+                    var startTime = Date.now();
+                    
+                    countRequest = $.post(ajaxurl, {
                         action: 'okvir_image_migrator_get_queue_count',
-                        nonce: '<?php echo wp_create_nonce('okvir_image_migrator_batch'); ?>'
+                        nonce: '<?php echo wp_create_nonce('okvir_image_migrator_batch'); ?>',
+                        override_limit: overrideLimit ? 'true' : 'false'
                     }, function(response) {
+                        countingInProgress = false;
+                        var elapsed = Date.now() - startTime;
+                        
                         if (response.success) {
-                            initialQueueCount = response.data.count;
-                            $('#queue-count').html('<strong>' + response.data.count + '</strong> images in processing queue');
+                            var data = response.data;
+                            initialQueueCount = data.count;
+                            
+                            // Update count display
+                            var countText = '<strong>' + data.count + '</strong> images in processing queue';
+                            if (data.limited) {
+                                countText += ' <span style="color: #d63638;">(limited to 10,000)</span>';
+                            }
+                            if (data.query_time_ms > 1000) {
+                                countText += ' <span style="color: #666; font-size: 12px;">(query took ' + 
+                                           (data.query_time_ms / 1000).toFixed(1) + 's)</span>';
+                            }
+                            
+                            $('#count-status').html(countText);
+                            $('.dashicons-update').hide().removeClass('spin');
+                            $('#cancel-count').hide();
+                            $('#start-batch').prop('disabled', false);
+                            $('#recount-images').prop('disabled', false);
+                            
+                            // Show safety warnings and controls
+                            if (data.count >= 10000) {
+                                $('#safety-warning').show();
+                                if (data.override_available) {
+                                    $('#override-controls').show();
+                                }
+                            }
+                            
+                        } else {
+                            $('#count-status').html('<span style="color: #d63638;">Error counting images: ' + 
+                                                  (response.data.message || 'Unknown error') + '</span>');
+                            $('.dashicons-update').hide().removeClass('spin');
+                            $('#cancel-count').hide();
+                            $('#recount-images').prop('disabled', false);
                         }
+                    }).fail(function(xhr, status, error) {
+                        countingInProgress = false;
+                        $('#count-status').html('<span style="color: #d63638;">Failed to count images (network error)</span>');
+                        $('.dashicons-update').hide().removeClass('spin');
+                        $('#cancel-count').hide();
+                        $('#recount-images').prop('disabled', false);
                     });
+                }
+                
+                // Cancel count operation
+                function cancelCount() {
+                    if (countRequest) {
+                        countRequest.abort();
+                        countRequest = null;
+                    }
+                    countingInProgress = false;
+                    $('#count-status').text('Count cancelled by user');
+                    $('.dashicons-update').hide().removeClass('spin');
+                    $('#cancel-count').hide();
+                    $('#recount-images').prop('disabled', false);
                 }
                 
                 // Process a single batch with graceful stopping support
@@ -3311,8 +3526,28 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     }, 120000); // 2 minutes emergency timeout
                 });
                 
-                // Load initial queue count
-                loadQueueCount();
+                // Event handlers for new UI elements
+                $('#cancel-count').click(cancelCount);
+                
+                $('#recount-images').click(function() {
+                    var overrideLimit = $('#override-limit').is(':checked');
+                    loadQueueCount(overrideLimit);
+                });
+                
+                $('#override-limit').change(function() {
+                    if ($(this).is(':checked')) {
+                        if (confirm('Are you sure you want to remove the 10,000 image safety limit? This could take hours to complete and use significant server resources.')) {
+                            loadQueueCount(true);
+                        } else {
+                            $(this).prop('checked', false);
+                        }
+                    } else {
+                        loadQueueCount(false);
+                    }
+                });
+                
+                // Load initial queue count with safety limit
+                loadQueueCount(false);
             });
             </script>
         <?php
