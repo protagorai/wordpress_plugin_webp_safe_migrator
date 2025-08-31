@@ -16,7 +16,8 @@ class WebP_Safe_Migrator {
     const STATUS_META = '_webp_migrator_status';         // converted|relinked|committed|skipped_animated_gif|convert_failed|metadata_failed
     const BACKUP_META = '_webp_migrator_backup_dir';
     const REPORT_META = '_webp_migrator_report';         // JSON-encoded per-attachment report
-    const DEFAULT_BASE_MIMES = ['image/jpeg','image/png','image/gif'];
+    const ERROR_META = '_webp_migrator_error';           // JSON-encoded error information
+    const DEFAULT_BASE_MIMES = ['image/jpeg','image/jpg','image/png','image/gif','image/webp','image/avif'];
     const SUPPORTED_TARGET_FORMATS = [
         'webp' => ['mime' => 'image/webp', 'ext' => 'webp', 'quality_range' => [1, 100], 'default_quality' => 75],
         'avif' => ['mime' => 'image/avif', 'ext' => 'avif', 'quality_range' => [1, 100], 'default_quality' => 60],
@@ -42,10 +43,18 @@ class WebP_Safe_Migrator {
             'validation'        => 1,           // 1 = validate (keep originals), 0 = delete originals immediately
             'skip_folders'      => "",          // textarea, one per line (relative to uploads), substring match
             'skip_mimes'        => "",          // comma/space separated MIME types to skip (e.g. "image/gif")
+            'enable_bounding_box' => 0,        // Enable bounding box resizing
+            'bounding_box_mode' => 'max',      // 'max' = maximum bounding box, 'min' = minimum bounding box
+            'bounding_box_width' => 1920,     // Bounding box width
+            'bounding_box_height' => 1080,    // Bounding box height
+            'check_filename_dimensions' => 0, // Check filename dimensions against actual dimensions
         ]);
 
         add_action('admin_menu', [$this, 'menu']);
         add_action('admin_init', [$this, 'handle_actions']);
+        add_action('wp_ajax_webp_migrator_process_batch', [$this, 'ajax_process_batch']);
+        add_action('wp_ajax_webp_migrator_get_queue_count', [$this, 'ajax_get_queue_count']);
+        add_action('wp_ajax_webp_migrator_reprocess_single', [$this, 'ajax_reprocess_single']);
         register_activation_hook(__FILE__, [$this, 'on_activate']);
 
         // WP-CLI
@@ -143,14 +152,12 @@ class WebP_Safe_Migrator {
     }
 
     public function menu() {
-        add_media_page('WebP Safe Migrator', 'WebP Migrator', 'manage_options', 'webp-safe-migrator', [$this, 'render_main']);
-        add_submenu_page(
-            'upload.php',
-            'WebP Migrator Reports',
-            'WebP Reports',
-            'manage_options',
-            'webp-safe-migrator-reports',
-            [$this, 'render_reports']
+        add_media_page(
+            'WebP Safe Migrator', 
+            'WebP Migrator', 
+            'manage_options', 
+            'webp-safe-migrator', 
+            [$this, 'render_tabbed_interface']
         );
     }
 
@@ -171,6 +178,13 @@ class WebP_Safe_Migrator {
 
         $skip_folders_raw = isset($_POST['skip_folders']) ? (string)$_POST['skip_folders'] : '';
         $skip_mimes_raw   = isset($_POST['skip_mimes']) ? (string)$_POST['skip_mimes'] : '';
+        
+        $enable_bounding_box = isset($_POST['enable_bounding_box']) ? 1 : 0;
+        $bounding_box_mode = isset($_POST['bounding_box_mode']) && in_array($_POST['bounding_box_mode'], ['max', 'min']) 
+                           ? (string)$_POST['bounding_box_mode'] : 'max';
+        $bounding_box_width = isset($_POST['bounding_box_width']) ? max(50, min(10000, (int)$_POST['bounding_box_width'])) : 1920;
+        $bounding_box_height = isset($_POST['bounding_box_height']) ? max(50, min(10000, (int)$_POST['bounding_box_height'])) : 1080;
+        $check_filename_dimensions = isset($_POST['check_filename_dimensions']) ? 1 : 0;
 
         $this->settings = [
             'target_format'     => $target_format,
@@ -184,6 +198,11 @@ class WebP_Safe_Migrator {
             'validation'        => $validation,
             'skip_folders'      => $skip_folders_raw,
             'skip_mimes'        => $skip_mimes_raw,
+            'enable_bounding_box' => $enable_bounding_box,
+            'bounding_box_mode' => $bounding_box_mode,
+            'bounding_box_width' => $bounding_box_width,
+            'bounding_box_height' => $bounding_box_height,
+            'check_filename_dimensions' => $check_filename_dimensions,
         ];
         update_option(self::OPTION, $this->settings);
         add_settings_error('webp_safe_migrator', 'saved', 'Settings saved.', 'updated');
@@ -234,6 +253,80 @@ class WebP_Safe_Migrator {
             }
             add_settings_error('webp_safe_migrator', 'commit_all', "Committed deletions for {$count} attachments.", 'updated');
         }
+
+        // Handle dimension inconsistency actions
+        $this->handle_dimension_actions();
+        
+        // Handle conversion error actions
+        $this->handle_error_actions();
+    }
+
+    private function handle_dimension_actions() {
+        if (!current_user_can('manage_options')) return;
+
+        // Clear all dimension inconsistencies
+        if (isset($_POST['clear_all_dimensions']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'clear_dimensions')) {
+            $uploads = wp_get_upload_dir();
+            $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-dimension-inconsistencies.json';
+            if (file_exists($log_file)) {
+                @unlink($log_file);
+                add_settings_error('webp_safe_migrator', 'cleared_all', 'All dimension inconsistencies cleared.', 'updated');
+            }
+        }
+
+        // Remove specific dimension inconsistency
+        if (isset($_POST['remove_dimension']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'remove_dimension')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            if ($att_id > 0) {
+                $removed = $this->remove_dimension_inconsistency($att_id);
+                if ($removed) {
+                    add_settings_error('webp_safe_migrator', 'removed', "Removed dimension inconsistency for attachment #{$att_id}.", 'updated');
+                } else {
+                    add_settings_error('webp_safe_migrator', 'not_found', "Dimension inconsistency for attachment #{$att_id} not found.", 'error');
+                }
+            }
+        }
+    }
+
+    private function handle_error_actions() {
+        if (!current_user_can('manage_options')) return;
+
+        // Clear all conversion errors
+        if (isset($_POST['clear_all_errors']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'clear_errors')) {
+            $uploads = wp_get_upload_dir();
+            $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-conversion-errors.json';
+            if (file_exists($log_file)) {
+                @unlink($log_file);
+                add_settings_error('webp_safe_migrator', 'cleared_errors', 'All conversion errors cleared.', 'updated');
+            }
+        }
+
+        // Remove specific conversion error
+        if (isset($_POST['remove_error']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'remove_error')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            if ($att_id > 0) {
+                $removed = $this->remove_conversion_error($att_id);
+                if ($removed) {
+                    delete_post_meta($att_id, self::ERROR_META);
+                    add_settings_error('webp_safe_migrator', 'removed_error', "Removed conversion error for attachment #{$att_id}.", 'updated');
+                } else {
+                    add_settings_error('webp_safe_migrator', 'error_not_found', "Conversion error for attachment #{$att_id} not found.", 'error');
+                }
+            }
+        }
+
+        // Retry failed conversion
+        if (isset($_POST['retry_conversion']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'retry_conversion')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            if ($att_id > 0) {
+                $retried = $this->process_attachment($att_id, $this->settings['quality'], $this->current_validation_mode());
+                if ($retried) {
+                    add_settings_error('webp_safe_migrator', 'retried_ok', "Successfully retried conversion for attachment #{$att_id}.", 'updated');
+                } else {
+                    add_settings_error('webp_safe_migrator', 'retry_failed', "Retry failed for attachment #{$att_id}.", 'error');
+                }
+            }
+        }
     }
 
     private function current_validation_mode(): bool {
@@ -241,7 +334,65 @@ class WebP_Safe_Migrator {
         return (bool)$this->settings['validation'];
     }
 
-    public function render_main() {
+    public function render_tabbed_interface() {
+        if (!current_user_can('manage_options')) return;
+        
+        // Determine active tab
+        $active_tab = $_GET['tab'] ?? 'settings';
+        $valid_tabs = ['settings', 'batch', 'reports', 'errors', 'reprocess', 'dimensions'];
+        if (!in_array($active_tab, $valid_tabs)) {
+            $active_tab = 'settings';
+        }
+        
+        ?>
+        <div class="wrap">
+            <h1>WebP Safe Migrator</h1>
+            
+            <!-- Tab Navigation -->
+            <h2 class="nav-tab-wrapper">
+                <a href="?page=webp-safe-migrator&tab=settings" class="nav-tab <?php echo $active_tab == 'settings' ? 'nav-tab-active' : ''; ?>">Settings & Queue</a>
+                <a href="?page=webp-safe-migrator&tab=batch" class="nav-tab <?php echo $active_tab == 'batch' ? 'nav-tab-active' : ''; ?>">Batch Processor</a>
+                <a href="?page=webp-safe-migrator&tab=reports" class="nav-tab <?php echo $active_tab == 'reports' ? 'nav-tab-active' : ''; ?>">Reports</a>
+                <a href="?page=webp-safe-migrator&tab=errors" class="nav-tab <?php echo $active_tab == 'errors' ? 'nav-tab-active' : ''; ?>">Error Manager</a>
+                <a href="?page=webp-safe-migrator&tab=reprocess" class="nav-tab <?php echo $active_tab == 'reprocess' ? 'nav-tab-active' : ''; ?>">Error Reprocessor</a>
+                <?php if (!empty($this->settings['check_filename_dimensions'])): ?>
+                <a href="?page=webp-safe-migrator&tab=dimensions" class="nav-tab <?php echo $active_tab == 'dimensions' ? 'nav-tab-active' : ''; ?>">Dimension Issues</a>
+                <?php endif; ?>
+            </h2>
+            
+            <!-- Tab Content -->
+            <div class="tab-content">
+                <?php
+                switch ($active_tab) {
+                    case 'settings':
+                        $this->render_settings_tab();
+                        break;
+                    case 'batch':
+                        $this->render_batch_tab();
+                        break;
+                    case 'reports':
+                        $this->render_reports_tab();
+                        break;
+                    case 'errors':
+                        $this->render_errors_tab();
+                        break;
+                    case 'reprocess':
+                        $this->render_reprocess_tab();
+                        break;
+                    case 'dimensions':
+                        $this->render_dimensions_tab();
+                        break;
+                    default:
+                        $this->render_settings_tab();
+                        break;
+                }
+                ?>
+            </div>
+        </div>
+        <?php
+    }
+    
+    public function render_settings_tab() {
         settings_errors('webp_safe_migrator');
         $target_format = (string)($this->settings['target_format'] ?? 'webp');
         $quality       = (int)$this->settings['quality'];
@@ -254,13 +405,17 @@ class WebP_Safe_Migrator {
         $validation    = (int)$this->settings['validation'];
         $skip_folders  = (string)$this->settings['skip_folders'];
         $skip_mimes    = (string)$this->settings['skip_mimes'];
+        $enable_bounding_box = (int)($this->settings['enable_bounding_box'] ?? 0);
+        $bounding_box_mode = (string)($this->settings['bounding_box_mode'] ?? 'max');
+        $bounding_box_width = (int)($this->settings['bounding_box_width'] ?? 1920);
+        $bounding_box_height = (int)($this->settings['bounding_box_height'] ?? 1080);
+        $check_filename_dimensions = (int)($this->settings['check_filename_dimensions'] ?? 0);
         
         $supported_formats = $this->get_supported_formats();
         $target_format_info = self::SUPPORTED_TARGET_FORMATS[$target_format] ?? self::SUPPORTED_TARGET_FORMATS['webp'];
         ?>
-        <div class="wrap">
-            <h1>Modern Image Migrator</h1>
-            <p>Convert images to modern formats (WebP, AVIF, JPEG XL) with optimal quality settings. Update all usages and metadata safely, then delete originals after validation.</p>
+        <h2>Settings & Configuration</h2>
+        <p>Configure format conversion settings and manage your image processing queue.</p>
 
             <form method="post">
                 <?php wp_nonce_field('save_settings', self::NONCE); ?>
@@ -335,6 +490,53 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                         </td>
                     </tr>
                 </table>
+
+                <h3>Image Resizing Options</h3>
+                <table class="form-table" role="presentation">
+                    <tr><th scope="row"><label for="enable_bounding_box">Enable Bounding Box Resizing</label></th>
+                        <td>
+                            <label><input type="checkbox" name="enable_bounding_box" id="enable_bounding_box" <?php checked($enable_bounding_box, 1); ?> onchange="toggleBoundingBoxOptions(this.checked)"> Enable automatic resizing based on bounding box constraints</label>
+                            <p class="description">When enabled, images will be resized according to the bounding box settings below.</p>
+                        </td>
+                    </tr>
+                    
+                    <tr class="bounding-box-settings" style="<?php echo !$enable_bounding_box ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="bounding_box_mode">Bounding Box Mode</label></th>
+                        <td>
+                            <select name="bounding_box_mode" id="bounding_box_mode">
+                                <option value="max" <?php selected($bounding_box_mode, 'max'); ?>>Maximum Bounding Box (scale down if larger)</option>
+                                <option value="min" <?php selected($bounding_box_mode, 'min'); ?>>Minimum Bounding Box (scale up if smaller)</option>
+                            </select>
+                            <p class="description">
+                                <strong>Maximum:</strong> Images larger than the bounding box will be scaled down to fit.<br>
+                                <strong>Minimum:</strong> Images smaller than the bounding box will be scaled up to meet the minimum requirements.
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <tr class="bounding-box-settings" style="<?php echo !$enable_bounding_box ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="bounding_box_width">Bounding Box Width</label></th>
+                        <td>
+                            <input type="number" name="bounding_box_width" id="bounding_box_width" min="50" max="10000" value="<?php echo esc_attr($bounding_box_width); ?>"> pixels
+                            <p class="description">Width constraint for bounding box resizing (50-10000 pixels).</p>
+                        </td>
+                    </tr>
+                    
+                    <tr class="bounding-box-settings" style="<?php echo !$enable_bounding_box ? 'display:none;' : ''; ?>">
+                        <th scope="row"><label for="bounding_box_height">Bounding Box Height</label></th>
+                        <td>
+                            <input type="number" name="bounding_box_height" id="bounding_box_height" min="50" max="10000" value="<?php echo esc_attr($bounding_box_height); ?>"> pixels
+                            <p class="description">Height constraint for bounding box resizing (50-10000 pixels).</p>
+                        </td>
+                    </tr>
+                    
+                    <tr><th scope="row"><label for="check_filename_dimensions">Check Filename Dimensions</label></th>
+                        <td>
+                            <label><input type="checkbox" name="check_filename_dimensions" <?php checked($check_filename_dimensions, 1); ?>> Detect and validate dimensions in filenames</label>
+                            <p class="description">Parse dimensions from filenames (e.g., "image-1920x1080.jpg") and log inconsistencies with actual image dimensions (±5px tolerance).</p>
+                        </td>
+                    </tr>
+                </table>
                 
                 <script type="text/javascript">
                 function toggleFormatOptions(format) {
@@ -347,10 +549,20 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     formatSettings.forEach(function(el) { el.style.display = 'table-row'; });
                 }
                 
+                function toggleBoundingBoxOptions(enabled) {
+                    var boundingBoxSettings = document.querySelectorAll('.bounding-box-settings');
+                    boundingBoxSettings.forEach(function(el) {
+                        el.style.display = enabled ? 'table-row' : 'none';
+                    });
+                }
+                
                 // Initialize on page load
                 document.addEventListener('DOMContentLoaded', function() {
                     var format = document.getElementById('target_format').value;
                     toggleFormatOptions(format);
+                    
+                    var boundingBoxEnabled = document.getElementById('enable_bounding_box').checked;
+                    toggleBoundingBoxOptions(boundingBoxEnabled);
                 });
                 </script>
                 
@@ -363,11 +575,17 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             <h2>Run batch</h2>
             <p><strong>Tip:</strong> back up your database and uploads before large migrations.</p>
             <p><strong>Current target:</strong> Converting to <strong><?php echo esc_html(strtoupper($target_format)); ?></strong> format</p>
-            <form method="post">
+            <form method="post" style="margin-bottom: 10px;">
                 <?php wp_nonce_field('run_batch', self::NONCE); ?>
                 <button class="button button-secondary" name="webp_migrator_run" value="1">Process next batch</button>
-                <a class="button" href="<?php echo esc_url(admin_url('upload.php?page=webp-safe-migrator-reports')); ?>">View reports</a>
+                <a class="button button-primary" href="?page=webp-safe-migrator&tab=batch">AJAX Batch Processor</a>
             </form>
+            
+            <p>
+                <a class="button" href="?page=webp-safe-migrator&tab=reports">View Reports</a>
+                <a class="button" href="?page=webp-safe-migrator&tab=errors">Manage Errors</a>
+                <a class="button" href="?page=webp-safe-migrator&tab=reprocess">Reprocess Errors</a>
+            </p>
 
             <hr/>
             <h2>Pending commits</h2>
@@ -377,20 +595,28 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             <h2>Images to convert (preview)</h2>
             <p>Showing images that will be converted to <strong><?php echo esc_html(strtoupper($target_format)); ?></strong> format:</p>
             <?php $this->render_queue_preview(); ?>
-        </div>
+            
+            <?php if (!empty($this->settings['check_filename_dimensions'])): ?>
+                <hr/>
+                <h2>Dimension Inconsistencies</h2>
+                <?php $this->render_dimension_inconsistencies_summary(); ?>
+            <?php endif; ?>
+            
+            <hr/>
+            <h2>Conversion Errors</h2>
+            <?php $this->render_conversion_errors_summary(); ?>
         <?php
     }
 
-    public function render_reports() {
-        if (!current_user_can('manage_options')) return;
+    public function render_reports_tab() {
         $att_id = isset($_GET['attachment_id']) ? (int)$_GET['attachment_id'] : 0;
 
-        echo '<div class="wrap"><h1>WebP Migrator Reports</h1>';
+        echo '<h2>Conversion Reports</h2>';
+        echo '<p>View detailed reports of converted images and the changes made across your site.</p>';
 
         if ($att_id) {
             $this->render_single_report($att_id);
-            echo '<p><a class="button" href="'.esc_url(admin_url('upload.php?page=webp-safe-migrator-reports')).'">&larr; Back to list</a></p>';
-            echo '</div>';
+            echo '<p><a class="button" href="?page=webp-safe-migrator&tab=reports">&larr; Back to list</a></p>';
             return;
         }
 
@@ -407,7 +633,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         ), ARRAY_A);
 
         if (!$rows) {
-            echo '<p>No reports yet.</p></div>';
+            echo '<p>No reports yet.</p>';
             return;
         }
 
@@ -434,10 +660,352 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             echo '<td>'.$cntT.'</td>';
             echo '<td>'.$cntC.'</td>';
             echo '<td>'.$cntX.'</td>';
-            echo '<td><a class="button" href="'.esc_url(admin_url('upload.php?page=webp-safe-migrator-reports&attachment_id='.$id)).'">View</a></td>';
+            echo '<td><a class="button" href="?page=webp-safe-migrator&tab=reports&attachment_id='.$id.'">View</a></td>';
             echo '</tr>';
         }
-        echo '</tbody></table></div>';
+        echo '</tbody></table>';
+    }
+
+    public function render_dimensions_tab() {
+        settings_errors('webp_safe_migrator');
+        
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-dimension-inconsistencies.json';
+        
+        echo '<h2>Dimension Inconsistencies Manager</h2>';
+        echo '<p>Manage filename dimension inconsistencies detected during image processing.</p>';
+        
+        if (!file_exists($log_file)) {
+            echo '<div class="notice notice-info"><p><strong>No dimension inconsistencies found.</strong></p>';
+            echo '<p>When enabled, the plugin will automatically detect and log cases where filenames contain dimensions (like "image-1920x1080.jpg") that don\'t match the actual image dimensions (±5px tolerance).</p></div>';
+            return;
+        }
+        
+        $log_data = json_decode(@file_get_contents($log_file), true);
+        if (!$log_data || !is_array($log_data)) {
+            echo '<div class="notice notice-error"><p>Could not read dimension inconsistencies log file.</p></div>';
+            return;
+        }
+        
+        $count = count($log_data);
+        echo '<div class="notice notice-warning">';
+        echo '<p><strong>' . $count . '</strong> dimension inconsistenc' . ($count === 1 ? 'y' : 'ies') . ' found.</p>';
+        echo '</div>';
+        
+        // Clear all button
+        echo '<div style="margin-bottom: 20px;">';
+        echo '<form method="post" style="display: inline-block;" onsubmit="return confirm(\'Are you sure you want to clear ALL dimension inconsistencies? This action cannot be undone.\');">';
+        wp_nonce_field('clear_dimensions', self::NONCE);
+        echo '<button type="submit" name="clear_all_dimensions" class="button button-secondary" value="1">Clear All Inconsistencies</button>';
+        echo '</form>';
+        $log_url = $uploads['baseurl'] . '/webp-migrator-dimension-inconsistencies.json';
+        echo ' <a href="' . esc_url($log_url) . '" target="_blank" class="button">Download JSON File</a>';
+        echo '</div>';
+        
+        // Table of inconsistencies
+        echo '<div class="tablenav top">';
+        echo '<div class="alignleft actions">';
+        echo '<span class="displaying-num">' . $count . ' item' . ($count === 1 ? '' : 's') . '</span>';
+        echo '</div>';
+        echo '</div>';
+        
+        echo '<table class="wp-list-table widefat fixed striped">';
+        echo '<thead><tr>';
+        echo '<th scope="col" class="manage-column column-cb check-column"><input type="checkbox" id="cb-select-all-1"></th>';
+        echo '<th scope="col" class="manage-column">Attachment</th>';
+        echo '<th scope="col" class="manage-column">Filename</th>';
+        echo '<th scope="col" class="manage-column">Expected Dimensions</th>';
+        echo '<th scope="col" class="manage-column">Actual Dimensions</th>';
+        echo '<th scope="col" class="manage-column">Difference</th>';
+        echo '<th scope="col" class="manage-column">Date</th>';
+        echo '<th scope="col" class="manage-column">Actions</th>';
+        echo '</tr></thead>';
+        
+        echo '<tbody>';
+        // Sort by timestamp (newest first)
+        uasort($log_data, function($a, $b) {
+            return ($b['timestamp_unix'] ?? 0) - ($a['timestamp_unix'] ?? 0);
+        });
+        
+        foreach ($log_data as $att_id => $entry) {
+            $attachment = get_post($att_id);
+            $attachment_title = $attachment ? $attachment->post_title : "Deleted attachment";
+            $attachment_url = $attachment ? get_edit_post_link($att_id) : null;
+            
+            $expected = $entry['parsed_dimensions']['width'] . ' × ' . $entry['parsed_dimensions']['height'];
+            $actual = $entry['actual_dimensions']['width'] . ' × ' . $entry['actual_dimensions']['height'];
+            
+            $diff_w = $entry['difference']['width_diff'];
+            $diff_h = $entry['difference']['height_diff'];
+            $diff_display = '';
+            if ($diff_w != 0 || $diff_h != 0) {
+                $diff_display = ($diff_w >= 0 ? '+' : '') . $diff_w . 'w, ' . ($diff_h >= 0 ? '+' : '') . $diff_h . 'h';
+            }
+            
+            $date = date('Y/m/d g:i a', $entry['timestamp_unix']);
+            
+            echo '<tr>';
+            echo '<th scope="row" class="check-column"><input type="checkbox" name="attachment[]" value="' . esc_attr($att_id) . '"></th>';
+            
+            // Attachment column
+            echo '<td>';
+            if ($attachment_url) {
+                echo '<strong><a href="' . esc_url($attachment_url) . '">#' . esc_html($att_id) . '</a></strong><br>';
+            } else {
+                echo '<strong>#' . esc_html($att_id) . '</strong><br>';
+            }
+            echo '<span style="color: #666;">' . esc_html($attachment_title) . '</span>';
+            echo '</td>';
+            
+            // Filename column
+            echo '<td><code>' . esc_html($entry['filename']) . '</code></td>';
+            
+            // Expected dimensions
+            echo '<td><strong>' . esc_html($expected) . '</strong></td>';
+            
+            // Actual dimensions
+            echo '<td><strong>' . esc_html($actual) . '</strong></td>';
+            
+            // Difference
+            echo '<td>';
+            if ($diff_display) {
+                echo '<code style="color: #d63638;">' . esc_html($diff_display) . '</code>';
+            } else {
+                echo '—';
+            }
+            echo '</td>';
+            
+            // Date
+            echo '<td>' . esc_html($date) . '</td>';
+            
+            // Actions
+            echo '<td>';
+            echo '<form method="post" style="display: inline-block;" onsubmit="return confirm(\'Remove this dimension inconsistency?\');">';
+            wp_nonce_field('remove_dimension', self::NONCE);
+            echo '<input type="hidden" name="attachment_id" value="' . esc_attr($att_id) . '">';
+            echo '<button type="submit" name="remove_dimension" class="button button-small" value="1">Remove</button>';
+            echo '</form>';
+            echo '</td>';
+            
+            echo '</tr>';
+        }
+        echo '</tbody></table>';
+        
+        echo '<div class="tablenav bottom">';
+        echo '<div class="alignleft actions">';
+        echo '<span class="displaying-num">' . $count . ' item' . ($count === 1 ? '' : 's') . '</span>';
+        echo '</div>';
+        echo '</div>';
+        
+        echo '<div style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-left: 4px solid #0073aa;">';
+        echo '<h3>About Dimension Inconsistencies</h3>';
+        echo '<p>These inconsistencies occur when filenames contain dimension information (like "image-1920x1080.jpg") that doesn\'t match the actual image dimensions within a ±5px tolerance.</p>';
+        echo '<p><strong>Common causes:</strong></p>';
+        echo '<ul>';
+        echo '<li>Images were resized after upload without updating the filename</li>';
+        echo '<li>Incorrectly named files during bulk operations</li>';
+        echo '<li>WordPress automatic resizing that changed dimensions</li>';
+        echo '<li>Manual filename changes that don\'t reflect actual content</li>';
+        echo '</ul>';
+        echo '<p><strong>Log location:</strong> <code>' . esc_html(str_replace(ABSPATH, '', $log_file)) . '</code></p>';
+        echo '</div>';
+    }
+
+    public function render_errors_tab() {
+        settings_errors('webp_safe_migrator');
+        
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-conversion-errors.json';
+        
+        echo '<h2>Conversion Errors Manager</h2>';
+        echo '<p>View and manage conversion errors encountered during image processing.</p>';
+        
+        if (!file_exists($log_file)) {
+            echo '<div class="notice notice-success"><p><strong>No conversion errors found.</strong></p>';
+            echo '<p>All image conversions have been successful so far. Errors will appear here if any conversions fail in the future.</p></div>';
+            return;
+        }
+        
+        $log_data = json_decode(@file_get_contents($log_file), true);
+        if (!$log_data || !is_array($log_data)) {
+            echo '<div class="notice notice-error"><p>Could not read conversion errors log file.</p></div>';
+            return;
+        }
+        
+        $count = count($log_data);
+        echo '<div class="notice notice-error">';
+        echo '<p><strong>' . $count . '</strong> conversion error' . ($count === 1 ? '' : 's') . ' found.</p>';
+        echo '</div>';
+        
+        // Action buttons
+        echo '<div style="margin-bottom: 20px;">';
+        echo '<form method="post" style="display: inline-block;" onsubmit="return confirm(\'Are you sure you want to clear ALL conversion errors? This action cannot be undone.\');">';
+        wp_nonce_field('clear_errors', self::NONCE);
+        echo '<button type="submit" name="clear_all_errors" class="button button-secondary" value="1">Clear All Errors</button>';
+        echo '</form>';
+        $log_url = $uploads['baseurl'] . '/webp-migrator-conversion-errors.json';
+        echo ' <a href="' . esc_url($log_url) . '" target="_blank" class="button">Download JSON File</a>';
+        echo '</div>';
+        
+        // Summary stats
+        $steps = [];
+        foreach ($log_data as $entry) {
+            $step = $entry['step'] ?? 'unknown';
+            $steps[$step] = ($steps[$step] ?? 0) + 1;
+        }
+        
+        if (!empty($steps)) {
+            echo '<div style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd;">';
+            echo '<h3>Error Summary by Step</h3>';
+            foreach ($steps as $step => $count) {
+                echo '<span class="button button-small" style="margin: 2px; cursor: default;">' . esc_html($step ?: 'unknown') . ': ' . $count . '</span>';
+            }
+            echo '</div>';
+        }
+        
+        // Table of errors
+        echo '<div class="tablenav top">';
+        echo '<div class="alignleft actions">';
+        echo '<span class="displaying-num">' . $count . ' item' . ($count === 1 ? '' : 's') . '</span>';
+        echo '</div>';
+        echo '</div>';
+        
+        echo '<table class="wp-list-table widefat fixed striped">';
+        echo '<thead><tr>';
+        echo '<th scope="col" class="manage-column column-cb check-column"><input type="checkbox" id="cb-select-all-1"></th>';
+        echo '<th scope="col" class="manage-column">Attachment</th>';
+        echo '<th scope="col" class="manage-column">Error</th>';
+        echo '<th scope="col" class="manage-column">Step</th>';
+        echo '<th scope="col" class="manage-column">Count</th>';
+        echo '<th scope="col" class="manage-column">First / Last Error</th>';
+        echo '<th scope="col" class="manage-column">Actions</th>';
+        echo '</tr></thead>';
+        
+        echo '<tbody>';
+        // Sort by timestamp (newest first)
+        uasort($log_data, function($a, $b) {
+            return ($b['timestamp_unix'] ?? 0) - ($a['timestamp_unix'] ?? 0);
+        });
+        
+        foreach ($log_data as $att_id => $entry) {
+            $attachment = get_post($att_id);
+            $attachment_title = $attachment ? $attachment->post_title : "Deleted attachment";
+            $attachment_url = $attachment ? get_edit_post_link($att_id) : null;
+            
+            $error_message = $entry['error'] ?? 'Unknown error';
+            $step = $entry['step'] ?? 'unknown';
+            $target_format = strtoupper($entry['target_format'] ?? 'unknown');
+            $mime_type = $entry['mime_type'] ?? '';
+            $error_count = $entry['error_count'] ?? 1;
+            
+            $first_error = isset($entry['first_error_timestamp_unix']) ? 
+                date('M j, H:i', $entry['first_error_timestamp_unix']) : 
+                (isset($entry['timestamp_unix']) ? date('M j, H:i', $entry['timestamp_unix']) : '—');
+            
+            $last_error = isset($entry['last_error_timestamp_unix']) ? 
+                date('M j, H:i', $entry['last_error_timestamp_unix']) : 
+                (isset($entry['timestamp_unix']) ? date('M j, H:i', $entry['timestamp_unix']) : '—');
+            
+            echo '<tr>';
+            echo '<th scope="row" class="check-column"><input type="checkbox" name="attachment[]" value="' . esc_attr($att_id) . '"></th>';
+            
+            // Attachment column
+            echo '<td>';
+            if ($attachment_url) {
+                echo '<strong><a href="' . esc_url($attachment_url) . '">#' . esc_html($att_id) . '</a></strong><br>';
+            } else {
+                echo '<strong>#' . esc_html($att_id) . '</strong><br>';
+            }
+            echo '<span style="color: #666;">' . esc_html($attachment_title) . '</span>';
+            if ($mime_type) {
+                echo '<br><code style="font-size: 11px; color: #999;">' . esc_html($mime_type) . '</code>';
+            }
+            echo '</td>';
+            
+            // Error message column
+            echo '<td style="max-width: 300px;">';
+            echo '<div style="word-wrap: break-word; max-height: 60px; overflow: auto;">';
+            echo '<strong style="color: #d63638;">' . esc_html($error_message) . '</strong>';
+            echo '</div>';
+            echo '</td>';
+            
+            // Step column
+            echo '<td><code>' . esc_html($step) . '</code></td>';
+            
+            // Error count column
+            echo '<td>';
+            if ($error_count > 1) {
+                echo '<span style="background: #d63638; color: white; padding: 2px 6px; border-radius: 3px; font-weight: bold;">' . esc_html($error_count) . '</span>';
+            } else {
+                echo '<span style="background: #ddd; color: #666; padding: 2px 6px; border-radius: 3px;">' . esc_html($error_count) . '</span>';
+            }
+            echo '</td>';
+            
+            // First / Last error column
+            echo '<td style="font-size: 11px;">';
+            echo '<strong>First:</strong> ' . esc_html($first_error) . '<br>';
+            if ($first_error !== $last_error) {
+                echo '<strong>Last:</strong> ' . esc_html($last_error);
+            } else {
+                echo '<em>Single occurrence</em>';
+            }
+            echo '</td>';
+            
+            // Actions column
+            echo '<td>';
+            echo '<form method="post" style="display: inline-block; margin-right: 5px;" onsubmit="return confirm(\'Remove this conversion error?\');">';
+            wp_nonce_field('remove_error', self::NONCE);
+            echo '<input type="hidden" name="attachment_id" value="' . esc_attr($att_id) . '">';
+            echo '<button type="submit" name="remove_error" class="button button-small" value="1" title="Remove Error">Remove</button>';
+            echo '</form>';
+            
+            if ($attachment) {
+                echo '<form method="post" style="display: inline-block;" onsubmit="return confirm(\'Retry conversion for this attachment?\');">';
+                wp_nonce_field('retry_conversion', self::NONCE);
+                echo '<input type="hidden" name="attachment_id" value="' . esc_attr($att_id) . '">';
+                echo '<button type="submit" name="retry_conversion" class="button button-small button-primary" value="1" title="Retry Conversion">Retry</button>';
+                echo '</form>';
+            }
+            echo '</td>';
+            
+            echo '</tr>';
+            
+            // Additional data row (collapsed by default)
+            if (!empty($entry['additional_data'])) {
+                echo '<tr class="additional-data" style="display: none;">';
+                echo '<td></td>';
+                echo '<td colspan="6">';
+                echo '<div style="background: #f0f0f0; padding: 10px; margin: 5px 0; border-left: 3px solid #ddd;">';
+                echo '<strong>Additional Data:</strong><br>';
+                echo '<pre style="font-size: 11px; max-height: 200px; overflow: auto;">' . esc_html(wp_json_encode($entry['additional_data'], JSON_PRETTY_PRINT)) . '</pre>';
+                echo '</div>';
+                echo '</td>';
+                echo '</tr>';
+            }
+        }
+        echo '</tbody></table>';
+        
+        echo '<div class="tablenav bottom">';
+        echo '<div class="alignleft actions">';
+        echo '<span class="displaying-num">' . $count . ' item' . ($count === 1 ? '' : 's') . '</span>';
+        echo '</div>';
+        echo '</div>';
+        
+        echo '<div style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-left: 4px solid #d63638;">';
+        echo '<h3>Understanding Conversion Errors</h3>';
+        echo '<p>Conversion errors occur when the plugin cannot successfully convert an image from one format to another.</p>';
+        echo '<p><strong>Common error steps:</strong></p>';
+        echo '<ul>';
+        echo '<li><strong>file_validation</strong>: Image file not found or inaccessible</li>';
+        echo '<li><strong>format_conversion</strong>: Unable to convert to target format (missing libraries, corrupted image)</li>';
+        echo '<li><strong>metadata_generation</strong>: Failed to create WordPress image metadata</li>';
+        echo '<li><strong>bounding_box_resize</strong>: Image resizing failed (non-critical)</li>';
+        echo '<li><strong>database_update</strong>: Failed to update references in database</li>';
+        echo '<li><strong>attachment_update</strong>: Failed to update attachment post metadata</li>';
+        echo '</ul>';
+        echo '<p><strong>Error handling:</strong> When critical errors occur, original files are preserved automatically. You can retry conversions after fixing the underlying issues.</p>';
+        echo '<p><strong>Log location:</strong> <code>' . esc_html(str_replace(ABSPATH, '', $log_file)) . '</code></p>';
+        echo '</div>';
     }
 
     private function render_single_report($att_id) {
@@ -574,6 +1142,145 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         echo '</ul>';
     }
 
+    private function render_dimension_inconsistencies_summary() {
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-dimension-inconsistencies.json';
+        
+        if (!file_exists($log_file)) {
+            echo '<p>No dimension inconsistencies found yet.</p>';
+            return;
+        }
+        
+        $log_data = json_decode(@file_get_contents($log_file), true);
+        if (!$log_data || !is_array($log_data)) {
+            echo '<p>Could not read dimension inconsistencies log.</p>';
+            return;
+        }
+        
+        $count = count($log_data);
+        echo '<p><strong>' . $count . '</strong> dimension inconsistenc' . ($count === 1 ? 'y' : 'ies') . ' found in filenames. ';
+        echo '<a href="?page=webp-safe-migrator&tab=dimensions" class="button button-small">Manage All</a></p>';
+        
+        if ($count > 0) {
+            echo '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f9f9f9;">';
+            echo '<table class="widefat striped" style="margin: 0;"><thead><tr><th>Filename</th><th>Expected</th><th>Actual</th><th>Difference</th><th>When</th></tr></thead><tbody>';
+            
+            // Show most recent entries first
+            $recent_entries = array_slice(array_reverse($log_data, true), 0, 20, true);
+            
+            foreach ($recent_entries as $att_id => $entry) {
+                $expected = $entry['parsed_dimensions']['width'] . '×' . $entry['parsed_dimensions']['height'];
+                $actual = $entry['actual_dimensions']['width'] . '×' . $entry['actual_dimensions']['height'];
+                $diff_w = $entry['difference']['width_diff'];
+                $diff_h = $entry['difference']['height_diff'];
+                $diff = ($diff_w >= 0 ? '+' : '') . $diff_w . 'w, ' . ($diff_h >= 0 ? '+' : '') . $diff_h . 'h';
+                $when = date('M j, H:i', $entry['timestamp_unix']);
+                
+                echo '<tr>';
+                echo '<td>' . esc_html($entry['filename']) . '</td>';
+                echo '<td>' . esc_html($expected) . '</td>';
+                echo '<td>' . esc_html($actual) . '</td>';
+                echo '<td><code style="font-size: 11px;">' . esc_html($diff) . '</code></td>';
+                echo '<td>' . esc_html($when) . '</td>';
+                echo '</tr>';
+            }
+            
+            echo '</tbody></table>';
+            if ($count > 20) {
+                echo '<p style="margin: 10px 0 0 0; font-style: italic;">Showing 20 most recent entries of ' . $count . ' total.</p>';
+            }
+            echo '</div>';
+            
+            $log_url = $uploads['baseurl'] . '/webp-migrator-dimension-inconsistencies.json';
+            echo '<p><a href="' . esc_url($log_url) . '" target="_blank">View full JSON log</a> | ';
+            echo '<small>Log file: <code>' . esc_html(str_replace(ABSPATH, '', $log_file)) . '</code></small></p>';
+        }
+    }
+
+    private function render_conversion_errors_summary() {
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-conversion-errors.json';
+        
+        if (!file_exists($log_file)) {
+            echo '<p><strong>No conversion errors.</strong> All image conversions have been successful. 
+            <a href="?page=webp-safe-migrator&tab=errors" class="button button-small">View Error Manager</a></p>';
+            return;
+        }
+        
+        $log_data = json_decode(@file_get_contents($log_file), true);
+        if (!$log_data || !is_array($log_data)) {
+            echo '<p>Could not read conversion errors log.</p>';
+            return;
+        }
+        
+        $count = count($log_data);
+        echo '<p><strong style="color: #d63638;">' . $count . '</strong> conversion error' . ($count === 1 ? '' : 's') . ' found. ';
+        echo '<a href="?page=webp-safe-migrator&tab=errors" class="button button-small">Manage Errors</a></p>';
+        
+        if ($count > 0) {
+            // Group errors by step for summary
+            $steps = [];
+            foreach ($log_data as $entry) {
+                $step = $entry['step'] ?? 'unknown';
+                $steps[$step] = ($steps[$step] ?? 0) + 1;
+            }
+            
+            echo '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f9f9f9;">';
+            echo '<table class="widefat striped" style="margin: 0;"><thead><tr><th>Attachment</th><th>Error</th><th>Step</th><th>When</th></tr></thead><tbody>';
+            
+            // Show most recent errors first
+            $recent_entries = array_slice(array_reverse($log_data, true), 0, 10, true);
+            
+            foreach ($recent_entries as $att_id => $entry) {
+                $attachment_title = get_the_title($att_id) ?: 'Deleted attachment';
+                $error_message = $entry['error'] ?? 'Unknown error';
+                $step = $entry['step'] ?? 'unknown';
+                $error_count = $entry['error_count'] ?? 1;
+                
+                // Use last error timestamp if available, otherwise timestamp
+                $when_unix = $entry['last_error_timestamp_unix'] ?? $entry['timestamp_unix'] ?? time();
+                $when = date('M j, H:i', $when_unix);
+                
+                // Truncate long error messages
+                if (strlen($error_message) > 80) {
+                    $error_message = substr($error_message, 0, 80) . '...';
+                }
+                
+                echo '<tr>';
+                echo '<td>#' . esc_html($att_id) . ' — ' . esc_html($attachment_title);
+                if ($error_count > 1) {
+                    echo ' <span style="background: #d63638; color: white; padding: 1px 4px; border-radius: 2px; font-size: 10px; font-weight: bold;">×' . $error_count . '</span>';
+                }
+                echo '</td>';
+                echo '<td><span style="color: #d63638;">' . esc_html($error_message) . '</span></td>';
+                echo '<td><code style="font-size: 11px;">' . esc_html($step) . '</code></td>';
+                echo '<td>' . esc_html($when) . '</td>';
+                echo '</tr>';
+            }
+            
+            echo '</tbody></table>';
+            if ($count > 10) {
+                echo '<p style="margin: 10px 0 0 0; font-style: italic;">Showing 10 most recent errors of ' . $count . ' total.</p>';
+            }
+            
+            // Step summary
+            if (!empty($steps)) {
+                echo '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">';
+                echo '<strong>Error types:</strong> ';
+                foreach ($steps as $step => $step_count) {
+                    echo '<span class="button button-small" style="margin: 2px; cursor: default; font-size: 10px;">' . esc_html($step) . ': ' . $step_count . '</span>';
+                }
+                echo '</div>';
+            }
+            
+            echo '</div>';
+            
+            $log_url = $uploads['baseurl'] . '/webp-migrator-conversion-errors.json';
+            echo '<p><a href="' . esc_url($log_url) . '" target="_blank">View full JSON log</a> | ';
+            echo '<small>Log file: <code>' . esc_html(str_replace(ABSPATH, '', $log_file)) . '</code></small></p>';
+        }
+    }
+
     /** Parse skip settings */
     private function get_skip_rules(): array {
         $folders = array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', (string)$this->settings['skip_folders'])));
@@ -582,28 +1289,35 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         return [ $folders, $mimes ];
     }
 
-    /** Return $limit attachment IDs matching base mimes that aren't already in target format */
-    public function get_non_target_format_attachments($limit = 10): array {
+    /** Return $limit attachment IDs that should be processed, excluding those with logged errors */
+    public function get_non_target_format_attachments($limit = 10, $exclude_errors = true): array {
         $target_format = $this->settings['target_format'] ?? 'webp';
         $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
         global $wpdb;
         [$skip_folders, $skip_mimes] = $this->get_skip_rules();
 
-        // Target mimes are default base mimes minus skip_mimes
+        // Target mimes are default base mimes minus skip_mimes  
         $target_mimes = array_values(array_diff(self::DEFAULT_BASE_MIMES, $skip_mimes));
         if (!$target_mimes) return [];
 
-        // Over-fetch to allow for folder-based skipping
-        $fetch = max($limit * 5, 50);
+        // Get IDs with logged errors to exclude them
+        $error_ids = [];
+        if ($exclude_errors) {
+            $error_ids = $this->get_attachment_ids_with_errors();
+        }
+
+        // Over-fetch to allow for folder-based skipping and error exclusion
+        $fetch = max($limit * 10, 100);
         $in = implode(',', array_fill(0, count($target_mimes), '%s'));
+        
+        // Don't exclude target format anymore - we may need to reprocess for quality/size
         $sql = $wpdb->prepare(
             "SELECT ID FROM {$wpdb->posts}
              WHERE post_type='attachment'
                AND post_mime_type IN ($in)
-               AND post_mime_type != %s
              ORDER BY ID ASC
              LIMIT %d",
-            ...array_merge($target_mimes, [$target_mime, (int)$fetch])
+            ...array_merge($target_mimes, [(int)$fetch])
         );
         $candidates = $wpdb->get_col($sql);
 
@@ -612,8 +1326,18 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
 
         foreach ($candidates as $id) {
             $id = (int)$id;
+            
+            // Skip if this attachment has logged errors
+            if ($exclude_errors && in_array($id, $error_ids)) {
+                continue;
+            }
+            
             $mime = get_post_mime_type($id);
-            if ($mime === 'image/webp') continue;
+            
+            // Check if we should process this attachment
+            if ($mime === $target_mime && !$this->should_reprocess_same_format($mime, $target_mime)) {
+                continue; // Same format and no reprocessing needed
+            }
 
             $file = get_attached_file($id);
             if (!$file) continue;
@@ -631,6 +1355,25 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         }
         return $result;
     }
+    
+    /**
+     * Get attachment IDs that have logged conversion errors
+     */
+    private function get_attachment_ids_with_errors(): array {
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-conversion-errors.json';
+        
+        if (!file_exists($log_file)) {
+            return [];
+        }
+        
+        $log_data = json_decode(@file_get_contents($log_file), true);
+        if (!$log_data || !is_array($log_data)) {
+            return [];
+        }
+        
+        return array_keys($log_data);
+    }
 
     private function is_animated_gif($path) {
         if (function_exists('imagecreatefromgif')) {
@@ -641,24 +1384,54 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     }
 
     public function process_attachment($att_id, $quality, $validation_mode) {
+        // Clear any previous error state
+        delete_post_meta($att_id, self::ERROR_META);
+        
         $file = get_attached_file($att_id);
-        if (!$file || !file_exists($file)) return false;
+        if (!$file || !file_exists($file)) {
+            $this->log_conversion_error($att_id, 'Attachment file not found or does not exist', 'file_validation', [
+                'file_path' => $file ?: 'null'
+            ]);
+            return false;
+        }
 
         $mime = get_post_mime_type($att_id);
         $target_format = $this->settings['target_format'] ?? 'webp';
         $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
         
-        if ($mime === $target_mime) return true;
+        // Check if we should still process same-format images for quality/size changes
+        $should_reprocess_same_format = $this->should_reprocess_same_format($mime, $target_mime);
+        if ($mime === $target_mime && !$should_reprocess_same_format) {
+            return true; // Already in target format and no reprocessing needed
+        }
 
         // Skip animated GIF unless animated WebP is implemented
         if ($mime === 'image/gif' && $this->is_animated_gif($file)) {
             update_post_meta($att_id, self::STATUS_META, 'skipped_animated_gif');
-            return false;
+            return false; // This is intentional skipping, not an error
+        }
+
+        // Validate filename dimensions against actual dimensions (before processing)
+        try {
+            $this->validate_filename_dimensions($file, $att_id);
+        } catch (Exception $e) {
+            $this->log_conversion_error($att_id, 'Filename dimension validation failed: ' . $e->getMessage(), 'dimension_validation');
+            // Don't return false here - dimension validation errors shouldn't stop conversion
         }
 
         $uploads = wp_get_upload_dir();
         $old_meta = wp_get_attachment_metadata($att_id);
-        if (!$old_meta || empty($old_meta['file'])) $old_meta = $this->build_metadata_fallback($file, $att_id);
+        if (!$old_meta || empty($old_meta['file'])) {
+            $old_meta = $this->build_metadata_fallback($file, $att_id);
+        }
+        
+        if (!$old_meta || empty($old_meta['file'])) {
+            $this->log_conversion_error($att_id, 'Could not generate attachment metadata', 'metadata_preparation', [
+                'file_path' => $file,
+                'existing_meta' => $old_meta
+            ]);
+            return false;
+        }
 
         $target_format = $this->settings['target_format'] ?? 'webp';
         $target_ext = self::SUPPORTED_TARGET_FORMATS[$target_format]['ext'] ?? 'webp';
@@ -669,59 +1442,188 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         $new_rel      = $old_dir_rel . preg_replace('/\.\w+$/', '.' . $target_ext, $old_basename);
         $new_path     = trailingslashit($uploads['basedir']) . $new_rel;
 
-        if (!wp_mkdir_p(dirname($new_path))) return false;
+        if (!wp_mkdir_p(dirname($new_path))) {
+            $this->log_conversion_error($att_id, 'Failed to create target directory', 'directory_creation', [
+                'target_dir' => dirname($new_path),
+                'new_path' => $new_path
+            ]);
+            return false;
+        }
 
         // Convert original to target format
         $format_options = $this->get_format_options($target_format, $quality);
-        $converted = $this->convert_to_format($file, $new_path, $target_format, $format_options);
-        if (!$converted) {
+        try {
+            $converted = $this->convert_to_format($file, $new_path, $target_format, $format_options);
+            if (!$converted) {
+                $this->log_conversion_error($att_id, 'Format conversion failed - unable to convert image to ' . $target_format, 'format_conversion', [
+                    'source_format' => $mime,
+                    'target_format' => $target_format,
+                    'target_path' => $new_path,
+                    'format_options' => $format_options
+                ]);
+                update_post_meta($att_id, self::STATUS_META, 'convert_failed');
+                return false;
+            }
+        } catch (Exception $e) {
+            $this->log_conversion_error($att_id, 'Format conversion exception: ' . $e->getMessage(), 'format_conversion', [
+                'source_format' => $mime,
+                'target_format' => $target_format,
+                'target_path' => $new_path,
+                'exception_class' => get_class($e)
+            ]);
             update_post_meta($att_id, self::STATUS_META, 'convert_failed');
             return false;
         }
 
-        // Generate fresh metadata/sizes from WebP original
-        $new_meta = wp_generate_attachment_metadata($att_id, $new_path);
-        if (!$new_meta || empty($new_meta['file'])) {
+        // Apply bounding box resizing if enabled
+        if (!empty($this->settings['enable_bounding_box'])) {
+            try {
+                $current_size = getimagesize($new_path);
+                if ($current_size) {
+                    $current_width = $current_size[0];
+                    $current_height = $current_size[1];
+                    $box_width = (int)($this->settings['bounding_box_width'] ?? 1920);
+                    $box_height = (int)($this->settings['bounding_box_height'] ?? 1080);
+                    $box_mode = $this->settings['bounding_box_mode'] ?? 'max';
+                    
+                    list($new_width, $new_height) = $this->calculate_bounding_box_dimensions(
+                        $current_width, $current_height, $box_width, $box_height, $box_mode
+                    );
+                    
+                    if ($new_width != $current_width || $new_height != $current_height) {
+                        $resized = $this->resize_image($new_path, $new_width, $new_height);
+                        if (!$resized) {
+                            $this->log_conversion_error($att_id, "Failed to resize image to {$new_width}x{$new_height}", 'bounding_box_resize', [
+                                'original_dimensions' => [$current_width, $current_height],
+                                'target_dimensions' => [$new_width, $new_height],
+                                'bounding_box_mode' => $box_mode,
+                                'bounding_box_size' => [$box_width, $box_height]
+                            ]);
+                            // Don't return false here - continue with original size
+                        }
+                    }
+                } else {
+                    $this->log_conversion_error($att_id, 'Could not get image dimensions for bounding box resize', 'bounding_box_resize', [
+                        'converted_path' => $new_path
+                    ]);
+                    // Don't return false here - continue without resize
+                }
+            } catch (Exception $e) {
+                $this->log_conversion_error($att_id, 'Bounding box resize exception: ' . $e->getMessage(), 'bounding_box_resize', [
+                    'exception_class' => get_class($e)
+                ]);
+                // Don't return false here - continue without resize
+            }
+        }
+
+        // Generate fresh metadata/sizes from converted original
+        try {
+            $new_meta = wp_generate_attachment_metadata($att_id, $new_path);
+            if (!$new_meta || empty($new_meta['file'])) {
+                $this->log_conversion_error($att_id, 'Failed to generate attachment metadata for converted image', 'metadata_generation', [
+                    'converted_path' => $new_path,
+                    'generated_meta' => $new_meta
+                ]);
+                update_post_meta($att_id, self::STATUS_META, 'metadata_failed');
+                // Keep the original file and return false - this is a critical failure
+                return false;
+            }
+        } catch (Exception $e) {
+            $this->log_conversion_error($att_id, 'Metadata generation exception: ' . $e->getMessage(), 'metadata_generation', [
+                'converted_path' => $new_path,
+                'exception_class' => get_class($e)
+            ]);
             update_post_meta($att_id, self::STATUS_META, 'metadata_failed');
             return false;
         }
 
         // Build URL mapping (old → new) for original and sizes
-        $map = $this->build_url_map($uploads, $old_meta, $new_meta);
+        try {
+            $map = $this->build_url_map($uploads, $old_meta, $new_meta);
+        } catch (Exception $e) {
+            $this->log_conversion_error($att_id, 'Failed to build URL mapping: ' . $e->getMessage(), 'url_mapping', [
+                'old_meta' => $old_meta,
+                'new_meta' => $new_meta
+            ]);
+            // Clean up converted file and preserve original
+            @unlink($new_path);
+            return false;
+        }
 
         // Update usages across DB and collect a report of changes
-        $report = $this->replace_everywhere($map);
+        try {
+            $report = $this->replace_everywhere($map);
+        } catch (Exception $e) {
+            $this->log_conversion_error($att_id, 'Failed to update database references: ' . $e->getMessage(), 'database_update', [
+                'map_count' => count($map ?? [])
+            ]);
+            // Clean up converted file and preserve original
+            @unlink($new_path);
+            return false;
+        }
 
         // Update attachment post + metas
-        $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
-        wp_update_post([
-            'ID'             => $att_id,
-            'post_mime_type' => $target_mime,
-            'guid'           => $uploads['baseurl'] . '/' . $new_meta['file'],
-        ]);
-        update_post_meta($att_id, '_wp_attached_file', $new_meta['file']);
-        wp_update_attachment_metadata($att_id, $new_meta);
+        try {
+            $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
+            $post_update_result = wp_update_post([
+                'ID'             => $att_id,
+                'post_mime_type' => $target_mime,
+                'guid'           => $uploads['baseurl'] . '/' . $new_meta['file'],
+            ]);
+            
+            if (is_wp_error($post_update_result) || $post_update_result === 0) {
+                throw new Exception('wp_update_post failed: ' . (is_wp_error($post_update_result) ? $post_update_result->get_error_message() : 'Unknown error'));
+            }
+            
+            update_post_meta($att_id, '_wp_attached_file', $new_meta['file']);
+            wp_update_attachment_metadata($att_id, $new_meta);
+        } catch (Exception $e) {
+            $this->log_conversion_error($att_id, 'Failed to update attachment metadata: ' . $e->getMessage(), 'attachment_update', [
+                'target_mime' => $target_mime ?? '',
+                'new_file' => $new_meta['file'] ?? ''
+            ]);
+            // Clean up converted file and preserve original
+            @unlink($new_path);
+            return false;
+        }
 
         // Store report
-        $report_payload = [
-            'ts'            => current_time('mysql'),
-            'map_count'     => count($map),
-            'posts'         => array_values(array_unique($report['posts'] ?? [])),
-            'postmeta'      => array_values($report['postmeta'] ?? []),
-            'options'       => array_values(array_unique($report['options'] ?? [])),
-            'usermeta'      => array_values($report['usermeta'] ?? []),
-            'termmeta'      => array_values($report['termmeta'] ?? []),
-            'comments'      => array_values(array_unique($report['comments'] ?? [])),
-            'custom_tables' => array_values($report['custom_tables'] ?? []),
-        ];
-        update_post_meta($att_id, self::REPORT_META, wp_json_encode($report_payload));
+        try {
+            $report_payload = [
+                'ts'            => current_time('mysql'),
+                'map_count'     => count($map),
+                'posts'         => array_values(array_unique($report['posts'] ?? [])),
+                'postmeta'      => array_values($report['postmeta'] ?? []),
+                'options'       => array_values(array_unique($report['options'] ?? [])),
+                'usermeta'      => array_values($report['usermeta'] ?? []),
+                'termmeta'      => array_values($report['termmeta'] ?? []),
+                'comments'      => array_values(array_unique($report['comments'] ?? [])),
+                'custom_tables' => array_values($report['custom_tables'] ?? []),
+            ];
+            update_post_meta($att_id, self::REPORT_META, wp_json_encode($report_payload));
+        } catch (Exception $e) {
+            // Report storage failure is not critical - log but continue
+            error_log('WebP Migrator: Failed to store conversion report for attachment #' . $att_id . ': ' . $e->getMessage());
+        }
 
         // Backup originals to a safe folder (deleted on commit)
         $backup_dir = trailingslashit($uploads['basedir']) . 'webp-migrator-backup/' . date('Ymd-His') . "/att-{$att_id}/";
-        if (!wp_mkdir_p($backup_dir)) $backup_dir = null;
+        if (!wp_mkdir_p($backup_dir)) {
+            $backup_dir = null;
+            error_log('WebP Migrator: Failed to create backup directory for attachment #' . $att_id);
+        }
 
-        // Move/delete old files
-        $this->collect_and_remove_old_files($uploads, $old_meta, $validation_mode, $backup_dir);
+        // Move/delete old files (always preserve in validation mode or on any previous error)
+        try {
+            $this->collect_and_remove_old_files($uploads, $old_meta, $validation_mode, $backup_dir);
+        } catch (Exception $e) {
+            $this->log_conversion_error($att_id, 'Failed to handle original files: ' . $e->getMessage(), 'file_cleanup', [
+                'backup_dir' => $backup_dir,
+                'validation_mode' => $validation_mode
+            ]);
+            // Don't return false here - conversion was successful, just cleanup failed
+            error_log('WebP Migrator: File cleanup failed for attachment #' . $att_id . ', but conversion completed successfully');
+        }
 
         // Mark status for UI
         update_post_meta($att_id, self::STATUS_META, $validation_mode ? 'relinked' : 'committed');
@@ -856,6 +1758,326 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         }
         
         return false;
+    }
+    
+    /**
+     * Calculate new dimensions based on bounding box constraints
+     */
+    private function calculate_bounding_box_dimensions($current_width, $current_height, $box_width, $box_height, $mode = 'max') {
+        if ($mode === 'max') {
+            // Maximum bounding box - scale down if larger
+            if ($current_width <= $box_width && $current_height <= $box_height) {
+                return [$current_width, $current_height]; // No resize needed
+            }
+            
+            $scale_x = $box_width / $current_width;
+            $scale_y = $box_height / $current_height;
+            $scale = min($scale_x, $scale_y); // Use smallest scale to fit within bounds
+            
+        } else {
+            // Minimum bounding box - scale up if smaller
+            if ($current_width >= $box_width && $current_height >= $box_height) {
+                return [$current_width, $current_height]; // No resize needed
+            }
+            
+            $scale_x = $box_width / $current_width;
+            $scale_y = $box_height / $current_height;
+            $scale = max($scale_x, $scale_y); // Use largest scale to meet minimum requirements
+        }
+        
+        $new_width = round($current_width * $scale);
+        $new_height = round($current_height * $scale);
+        
+        return [$new_width, $new_height];
+    }
+    
+    /**
+     * Resize image using WordPress image editor
+     */
+    private function resize_image($src_path, $new_width, $new_height) {
+        $editor = wp_get_image_editor($src_path);
+        if (is_wp_error($editor)) {
+            return false;
+        }
+        
+        $resized = $editor->resize($new_width, $new_height, false); // false = don't crop, just resize
+        if (is_wp_error($resized)) {
+            return false;
+        }
+        
+        $saved = $editor->save($src_path); // Overwrite the source file
+        return !is_wp_error($saved);
+    }
+    
+    /**
+     * Parse dimensions from filename using various patterns
+     * Examples: "image-1920x1080.jpg", "file_150x150.webp", "photo-783x450.png"
+     */
+    private function parse_filename_dimensions($filename) {
+        $basename = basename($filename, '.' . pathinfo($filename, PATHINFO_EXTENSION));
+        
+        // Common patterns for dimensions in filenames
+        $patterns = [
+            '/(\d{2,5})[x×](\d{2,5})(?:\D|$)/i',        // 1920x1080, 150×150
+            '/-(\d{2,5})[x×](\d{2,5})(?:\D|$)/i',       // -1920x1080
+            '/_(\d{2,5})[x×](\d{2,5})(?:\D|$)/i',       // _1920x1080
+            '/[\s-_](\d{2,5})[x×](\d{2,5})$/i',         // ending with -1920x1080
+        ];
+        
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $basename, $matches)) {
+                $width = (int)$matches[1];
+                $height = (int)$matches[2];
+                
+                // Basic sanity check - dimensions should be reasonable
+                if ($width >= 10 && $height >= 10 && $width <= 15000 && $height <= 15000) {
+                    return [$width, $height];
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Validate filename dimensions against actual image dimensions
+     */
+    private function validate_filename_dimensions($file_path, $att_id) {
+        if (empty($this->settings['check_filename_dimensions'])) {
+            return; // Feature disabled
+        }
+        
+        $filename = basename($file_path);
+        $parsed_dims = $this->parse_filename_dimensions($filename);
+        
+        if (!$parsed_dims) {
+            return; // No dimensions found in filename
+        }
+        
+        $actual_size = getimagesize($file_path);
+        if (!$actual_size) {
+            return; // Could not get actual dimensions
+        }
+        
+        list($parsed_width, $parsed_height) = $parsed_dims;
+        list($actual_width, $actual_height) = $actual_size;
+        
+        // Check if dimensions match within ±5px tolerance
+        $tolerance = 5;
+        $width_match = abs($parsed_width - $actual_width) <= $tolerance;
+        $height_match = abs($parsed_height - $actual_height) <= $tolerance;
+        
+        if (!$width_match || !$height_match) {
+            // Dimensions don't match - log this inconsistency
+            $this->log_dimension_inconsistency($att_id, $filename, $parsed_dims, [$actual_width, $actual_height]);
+        }
+    }
+    
+    /**
+     * Determine if same-format images should be reprocessed for quality/size changes
+     */
+    private function should_reprocess_same_format($current_mime, $target_mime) {
+        if ($current_mime !== $target_mime) {
+            return false; // Different formats, normal conversion applies
+        }
+        
+        // Same format - check if bounding box or quality changes are needed
+        $bounding_box_enabled = !empty($this->settings['enable_bounding_box']);
+        
+        // For quality reprocessing, we could add metadata checks here
+        // For now, we'll reprocess if bounding box is enabled (size changes needed)
+        return $bounding_box_enabled;
+    }
+    
+    /**
+     * Log conversion error to JSON file and post meta with error count tracking
+     */
+    private function log_conversion_error($att_id, $error_message, $step = '', $additional_data = []) {
+        $current_time = current_time('mysql');
+        $current_unix = time();
+        
+        // Store error in post meta for quick access
+        $error_data = [
+            'error' => $error_message,
+            'step' => $step,
+            'timestamp' => $current_time,
+            'timestamp_unix' => $current_unix,
+            'additional_data' => $additional_data
+        ];
+        update_post_meta($att_id, self::ERROR_META, wp_json_encode($error_data));
+        
+        // Also log to central JSON file
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-conversion-errors.json';
+        
+        // Load existing log data
+        $log_data = [];
+        if (file_exists($log_file)) {
+            $existing_data = @file_get_contents($log_file);
+            if ($existing_data) {
+                $log_data = json_decode($existing_data, true) ?: [];
+            }
+        }
+        
+        // Check if this attachment already has an error logged
+        $existing_entry = $log_data[$att_id] ?? null;
+        
+        if ($existing_entry) {
+            // Update existing entry - increment count and update last error
+            $log_data[$att_id] = array_merge($existing_entry, [
+                'error' => $error_message,  // Update to latest error message
+                'step' => $step,           // Update to latest step
+                'last_error_timestamp' => $current_time,
+                'last_error_timestamp_unix' => $current_unix,
+                'error_count' => ($existing_entry['error_count'] ?? 1) + 1,
+                'target_format' => $this->settings['target_format'] ?? 'webp',
+                'quality' => $this->settings['quality'] ?? 75,
+                'additional_data' => $additional_data
+            ]);
+        } else {
+            // Create new comprehensive log entry
+            $log_data[$att_id] = [
+                'attachment_id' => $att_id,
+                'filename' => basename(get_attached_file($att_id) ?: ''),
+                'full_path' => get_attached_file($att_id),
+                'mime_type' => get_post_mime_type($att_id),
+                'error' => $error_message,
+                'step' => $step,
+                'target_format' => $this->settings['target_format'] ?? 'webp',
+                'quality' => $this->settings['quality'] ?? 75,
+                'first_error_timestamp' => $current_time,
+                'first_error_timestamp_unix' => $current_unix,
+                'last_error_timestamp' => $current_time,
+                'last_error_timestamp_unix' => $current_unix,
+                'error_count' => 1,
+                'additional_data' => $additional_data
+            ];
+        }
+        
+        // Save updated log
+        $json_data = wp_json_encode($log_data, JSON_PRETTY_PRINT);
+        @file_put_contents($log_file, $json_data, LOCK_EX);
+        
+        // Also log to WordPress error log for immediate visibility
+        error_log(sprintf(
+            'WebP Migrator Error [%s]: %s (Attachment #%d: %s) [Count: %d]',
+            $step ?: 'unknown step',
+            $error_message,
+            $att_id,
+            basename(get_attached_file($att_id) ?: ''),
+            $log_data[$att_id]['error_count']
+        ));
+    }
+    
+    /**
+     * Remove a specific conversion error from the log
+     */
+    private function remove_conversion_error($att_id) {
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-conversion-errors.json';
+        
+        if (!file_exists($log_file)) {
+            return false;
+        }
+        
+        $log_data = json_decode(@file_get_contents($log_file), true);
+        if (!$log_data || !is_array($log_data)) {
+            return false;
+        }
+        
+        if (!isset($log_data[$att_id])) {
+            return false;
+        }
+        
+        unset($log_data[$att_id]);
+        
+        // Save updated log
+        $json_data = wp_json_encode($log_data, JSON_PRETTY_PRINT);
+        $result = @file_put_contents($log_file, $json_data, LOCK_EX);
+        
+        return $result !== false;
+    }
+    
+    /**
+     * Remove a specific dimension inconsistency from the log
+     */
+    private function remove_dimension_inconsistency($att_id) {
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-dimension-inconsistencies.json';
+        
+        if (!file_exists($log_file)) {
+            return false;
+        }
+        
+        $log_data = json_decode(@file_get_contents($log_file), true);
+        if (!$log_data || !is_array($log_data)) {
+            return false;
+        }
+        
+        if (!isset($log_data[$att_id])) {
+            return false;
+        }
+        
+        unset($log_data[$att_id]);
+        
+        // Save updated log
+        $json_data = wp_json_encode($log_data, JSON_PRETTY_PRINT);
+        $result = @file_put_contents($log_file, $json_data, LOCK_EX);
+        
+        return $result !== false;
+    }
+    
+    /**
+     * Log dimension inconsistency to JSON file
+     */
+    private function log_dimension_inconsistency($att_id, $filename, $parsed_dims, $actual_dims) {
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-dimension-inconsistencies.json';
+        
+        // Load existing log data
+        $log_data = [];
+        if (file_exists($log_file)) {
+            $existing_data = @file_get_contents($log_file);
+            if ($existing_data) {
+                $log_data = json_decode($existing_data, true) ?: [];
+            }
+        }
+        
+        // Create log entry
+        $entry = [
+            'attachment_id' => $att_id,
+            'filename' => $filename,
+            'full_path' => get_attached_file($att_id),
+            'parsed_dimensions' => [
+                'width' => $parsed_dims[0],
+                'height' => $parsed_dims[1]
+            ],
+            'actual_dimensions' => [
+                'width' => $actual_dims[0],
+                'height' => $actual_dims[1]
+            ],
+            'difference' => [
+                'width_diff' => $actual_dims[0] - $parsed_dims[0],
+                'height_diff' => $actual_dims[1] - $parsed_dims[1]
+            ],
+            'timestamp' => current_time('mysql'),
+            'timestamp_unix' => time()
+        ];
+        
+        // Add to log data (keyed by attachment ID to avoid duplicates)
+        $log_data[$att_id] = $entry;
+        
+        // Save updated log
+        $json_data = wp_json_encode($log_data, JSON_PRETTY_PRINT);
+        @file_put_contents($log_file, $json_data, LOCK_EX);
+        
+        // Also log to WordPress error log for immediate visibility
+        error_log(sprintf(
+            'WebP Migrator: Dimension mismatch in %s - Filename suggests %dx%d but actual is %dx%d',
+            $filename,
+            $parsed_dims[0], $parsed_dims[1],
+            $actual_dims[0], $actual_dims[1]
+        ));
     }
     
     private function load_image_gd($src) {
@@ -1198,6 +2420,472 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 continue;
             }
         }
+    }
+
+    /**
+     * AJAX handler for processing batch
+     */
+    public function ajax_process_batch() {
+        check_ajax_referer('webp_migrator_batch', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        
+        $batch_size = min(10, max(1, (int)($_POST['batch_size'] ?? 5)));
+        $quality = max(1, min(100, (int)($_POST['quality'] ?? $this->settings['quality'])));
+        $validation_mode = (bool)($_POST['validation'] ?? $this->current_validation_mode());
+        
+        $ids = $this->get_non_target_format_attachments($batch_size, true);
+        
+        $results = [];
+        $processed = 0;
+        $errors = 0;
+        
+        foreach ($ids as $att_id) {
+            $result = $this->process_attachment($att_id, $quality, $validation_mode);
+            $attachment_title = get_the_title($att_id) ?: 'Unknown';
+            
+            if ($result) {
+                $processed++;
+                $results[] = [
+                    'id' => $att_id,
+                    'title' => $attachment_title,
+                    'status' => 'success',
+                    'message' => 'Converted successfully'
+                ];
+            } else {
+                $errors++;
+                $error_data = json_decode(get_post_meta($att_id, self::ERROR_META, true) ?: '{}', true);
+                $results[] = [
+                    'id' => $att_id,
+                    'title' => $attachment_title,
+                    'status' => 'error',
+                    'message' => $error_data['error'] ?? 'Unknown error'
+                ];
+            }
+        }
+        
+        wp_send_json_success([
+            'processed' => $processed,
+            'errors' => $errors,
+            'results' => $results,
+            'remaining' => count($this->get_non_target_format_attachments(1000, true)) // Get estimate
+        ]);
+    }
+    
+    /**
+     * AJAX handler for getting queue count
+     */
+    public function ajax_get_queue_count() {
+        check_ajax_referer('webp_migrator_batch', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        
+        $count = count($this->get_non_target_format_attachments(1000, true));
+        wp_send_json_success(['count' => $count]);
+    }
+    
+    /**
+     * AJAX handler for reprocessing single attachment with errors
+     */
+    public function ajax_reprocess_single() {
+        check_ajax_referer('webp_migrator_batch', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        
+        $att_id = (int)($_POST['attachment_id'] ?? 0);
+        if ($att_id <= 0) {
+            wp_send_json_error('Invalid attachment ID');
+        }
+        
+        $quality = max(1, min(100, (int)($_POST['quality'] ?? $this->settings['quality'])));
+        $validation_mode = (bool)($_POST['validation'] ?? $this->current_validation_mode());
+        
+        // Process this specific attachment (don't exclude errors for reprocessing)
+        $result = $this->process_attachment($att_id, $quality, $validation_mode);
+        $attachment_title = get_the_title($att_id) ?: 'Unknown';
+        
+        if ($result) {
+            wp_send_json_success([
+                'id' => $att_id,
+                'title' => $attachment_title,
+                'message' => 'Fixed successfully'
+            ]);
+        } else {
+            $error_data = json_decode(get_post_meta($att_id, self::ERROR_META, true) ?: '{}', true);
+            wp_send_json_error([
+                'id' => $att_id,
+                'title' => $attachment_title,
+                'message' => $error_data['error'] ?? 'Unknown error'
+            ]);
+        }
+    }
+    
+    /**
+     * Render batch processor tab
+     */
+    public function render_batch_tab() {
+        $target_format = strtoupper($this->settings['target_format'] ?? 'webp');
+        $quality = $this->settings['quality'] ?? 75;
+        $validation = $this->settings['validation'] ?? 1;
+        
+        ?>
+        <h2>Batch Processor</h2>
+        <p>Process multiple images with real-time progress tracking. Images with previous errors will be skipped automatically.</p>
+            
+            <div id="batch-status" style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; background: #f9f9f9;">
+                <p><strong>Current settings:</strong> Converting to <strong><?php echo esc_html($target_format); ?></strong> format at <strong><?php echo esc_attr($quality); ?>%</strong> quality</p>
+                <p><strong>Validation mode:</strong> <?php echo $validation ? 'Enabled (originals preserved)' : 'Disabled (originals deleted immediately)'; ?></p>
+                <p id="queue-count">Loading queue count...</p>
+            </div>
+            
+            <div id="batch-controls" style="margin: 20px 0;">
+                <label for="batch-size">Batch Size: </label>
+                <select id="batch-size">
+                    <option value="1">1 image</option>
+                    <option value="5" selected>5 images</option>
+                    <option value="10">10 images</option>
+                    <option value="20">20 images</option>
+                </select>
+                
+                <button id="start-batch" class="button button-primary" style="margin-left: 10px;">Start Batch Processing</button>
+                <button id="stop-batch" class="button" style="margin-left: 10px; display: none;">Stop Processing</button>
+            </div>
+            
+            <div id="progress-container" style="display: none; margin: 20px 0;">
+                <div style="background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; overflow: hidden;">
+                    <div id="progress-bar" style="background: #0073aa; height: 20px; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="progress-text">Processing...</p>
+            </div>
+            
+            <div id="results-container" style="margin: 20px 0;">
+                <div id="results-summary" style="display: none; padding: 10px; border: 1px solid #ddd; margin-bottom: 10px;"></div>
+                <div id="results-log" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: white; font-family: monospace; font-size: 12px; display: none;"></div>
+            </div>
+            
+            <script>
+            jQuery(document).ready(function($) {
+                var processing = false;
+                var totalProcessed = 0;
+                var totalErrors = 0;
+                var initialQueueCount = 0;
+                
+                // Load initial queue count
+                function loadQueueCount() {
+                    $.post(ajaxurl, {
+                        action: 'webp_migrator_get_queue_count',
+                        nonce: '<?php echo wp_create_nonce('webp_migrator_batch'); ?>'
+                    }, function(response) {
+                        if (response.success) {
+                            initialQueueCount = response.data.count;
+                            $('#queue-count').html('<strong>' + response.data.count + '</strong> images in processing queue');
+                        }
+                    });
+                }
+                
+                // Process a single batch
+                function processBatch() {
+                    if (!processing) return;
+                    
+                    var batchSize = parseInt($('#batch-size').val());
+                    
+                    $.post(ajaxurl, {
+                        action: 'webp_migrator_process_batch',
+                        nonce: '<?php echo wp_create_nonce('webp_migrator_batch'); ?>',
+                        batch_size: batchSize,
+                        quality: <?php echo esc_js($quality); ?>,
+                        validation: <?php echo esc_js($validation); ?>
+                    }, function(response) {
+                        if (response.success) {
+                            var data = response.data;
+                            totalProcessed += data.processed;
+                            totalErrors += data.errors;
+                            
+                            // Update progress
+                            var currentProcessed = initialQueueCount - data.remaining;
+                            var progressPercent = initialQueueCount > 0 ? (currentProcessed / initialQueueCount) * 100 : 100;
+                            $('#progress-bar').css('width', progressPercent + '%');
+                            $('#progress-text').text('Processed: ' + currentProcessed + ' / ' + initialQueueCount + ' (' + Math.round(progressPercent) + '%)');
+                            
+                            // Update summary
+                            $('#results-summary').show().html(
+                                '<strong>Total Processed:</strong> ' + totalProcessed + ' | ' +
+                                '<strong>Errors:</strong> ' + totalErrors + ' | ' +
+                                '<strong>Remaining:</strong> ' + data.remaining
+                            );
+                            
+                            // Add results to log
+                            var logDiv = $('#results-log');
+                            logDiv.show();
+                            
+                            data.results.forEach(function(result) {
+                                var timestamp = new Date().toLocaleTimeString();
+                                var statusColor = result.status === 'success' ? '#0073aa' : '#d63638';
+                                logDiv.append(
+                                    '<div style="margin-bottom: 5px;">' +
+                                    '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                                    '<strong>#' + result.id + '</strong> ' + result.title + ': ' +
+                                    '<span style="color: ' + statusColor + ';">' + result.message + '</span>' +
+                                    '</div>'
+                                );
+                            });
+                            logDiv.scrollTop(logDiv[0].scrollHeight);
+                            
+                            // Continue processing if there are remaining items
+                            if (data.remaining > 0 && processing) {
+                                setTimeout(processBatch, 1000); // 1 second delay between batches
+                            } else {
+                                // Processing complete
+                                processing = false;
+                                $('#start-batch').show().text('Start Batch Processing');
+                                $('#stop-batch').hide();
+                                $('#progress-text').text('Processing complete!');
+                                loadQueueCount(); // Refresh queue count
+                            }
+                        } else {
+                            // Error occurred
+                            processing = false;
+                            $('#start-batch').show();
+                            $('#stop-batch').hide();
+                            alert('Error: ' + (response.data || 'Unknown error occurred'));
+                        }
+                    }).fail(function() {
+                        processing = false;
+                        $('#start-batch').show();
+                        $('#stop-batch').hide();
+                        alert('Network error occurred. Please try again.');
+                    });
+                }
+                
+                // Start button click
+                $('#start-batch').click(function() {
+                    if (processing) return;
+                    
+                    processing = true;
+                    totalProcessed = 0;
+                    totalErrors = 0;
+                    
+                    $(this).hide();
+                    $('#stop-batch').show();
+                    $('#progress-container').show();
+                    $('#results-log').empty();
+                    
+                    processBatch();
+                });
+                
+                // Stop button click
+                $('#stop-batch').click(function() {
+                    processing = false;
+                    $('#start-batch').show();
+                    $(this).hide();
+                    loadQueueCount(); // Refresh queue count
+                });
+                
+                // Load initial queue count
+                loadQueueCount();
+            });
+            </script>
+        <?php
+    }
+    
+    /**
+     * Render error reprocessor tab
+     */
+    public function render_reprocess_tab() {
+        $uploads = wp_get_upload_dir();
+        $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-conversion-errors.json';
+        
+        ?>
+        <h2>Error Reprocessor</h2>
+        <p>Retry processing images that previously failed. This page only processes images with logged errors.</p>
+            
+            <?php
+            if (!file_exists($log_file)) {
+                echo '<div class="notice notice-success"><p><strong>No errors to reprocess!</strong> All conversions have been successful.</p></div>';
+                return;
+            }
+            
+            $log_data = json_decode(@file_get_contents($log_file), true);
+            if (!$log_data || !is_array($log_data)) {
+                echo '<div class="notice notice-error"><p>Could not read error log file.</p></div>';
+                return;
+            }
+            
+            $error_count = count($log_data);
+            ?>
+            
+            <div style="margin: 20px 0; padding: 15px; border: 1px solid #d63638; background: #fff2f2;">
+                <p><strong><?php echo $error_count; ?></strong> images with conversion errors available for reprocessing.</p>
+                <p><strong>Note:</strong> Reprocessing errors will not create duplicate log entries - existing error counts and timestamps will be preserved if errors occur again.</p>
+            </div>
+            
+            <div id="reprocess-controls" style="margin: 20px 0;">
+                <label for="reprocess-batch-size">Batch Size: </label>
+                <select id="reprocess-batch-size">
+                    <option value="1">1 image</option>
+                    <option value="3" selected>3 images</option>
+                    <option value="5">5 images</option>
+                    <option value="10">10 images</option>
+                </select>
+                
+                <button id="start-reprocess" class="button button-primary" style="margin-left: 10px;">Start Reprocessing</button>
+                <button id="stop-reprocess" class="button" style="margin-left: 10px; display: none;">Stop</button>
+            </div>
+            
+            <div id="reprocess-progress" style="display: none; margin: 20px 0;">
+                <div style="background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; overflow: hidden;">
+                    <div id="reprocess-progress-bar" style="background: #00a32a; height: 20px; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="reprocess-progress-text">Reprocessing...</p>
+            </div>
+            
+            <div id="reprocess-results" style="margin: 20px 0;">
+                <div id="reprocess-summary" style="display: none; padding: 10px; border: 1px solid #ddd; margin-bottom: 10px;"></div>
+                <div id="reprocess-log" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: white; font-family: monospace; font-size: 12px; display: none;"></div>
+            </div>
+            
+            <script>
+            jQuery(document).ready(function($) {
+                var reprocessing = false;
+                var totalReprocessed = 0;
+                var totalFixed = 0;
+                var totalStillErrors = 0;
+                var errorIds = <?php echo wp_json_encode(array_keys($log_data)); ?>;
+                var currentIndex = 0;
+                
+                function reprocessBatch() {
+                    if (!reprocessing || currentIndex >= errorIds.length) {
+                        // Reprocessing complete
+                        reprocessing = false;
+                        $('#start-reprocess').show().text('Start Reprocessing');
+                        $('#stop-reprocess').hide();
+                        $('#reprocess-progress-text').text('Reprocessing complete!');
+                        return;
+                    }
+                    
+                    var batchSize = parseInt($('#reprocess-batch-size').val());
+                    var batchIds = errorIds.slice(currentIndex, currentIndex + batchSize);
+                    
+                    // Process each ID in the batch sequentially
+                    var batchPromises = batchIds.map(function(attId) {
+                        return $.post(ajaxurl, {
+                            action: 'webp_migrator_process_batch',
+                            nonce: '<?php echo wp_create_nonce('webp_migrator_batch'); ?>',
+                            batch_size: 1,
+                            attachment_ids: [attId], // Custom parameter for specific IDs
+                            quality: <?php echo esc_js($this->settings['quality'] ?? 75); ?>,
+                            validation: <?php echo esc_js($this->settings['validation'] ?? 1); ?>
+                        });
+                    });
+                    
+                    // Process each ID in the batch
+                    var processed = 0;
+                    batchIds.forEach(function(attId) {
+                        $.post(ajaxurl, {
+                            action: 'webp_migrator_reprocess_single',
+                            nonce: '<?php echo wp_create_nonce('webp_migrator_batch'); ?>',
+                            attachment_id: attId,
+                            quality: <?php echo esc_js($this->settings['quality'] ?? 75); ?>,
+                            validation: <?php echo esc_js($this->settings['validation'] ?? 1); ?>
+                        }, function(response) {
+                            totalReprocessed++;
+                            processed++;
+                            var timestamp = new Date().toLocaleTimeString();
+                            var logDiv = $('#reprocess-log');
+                            logDiv.show();
+                            
+                            if (response && response.success) {
+                                totalFixed++;
+                                logDiv.append(
+                                    '<div style="margin-bottom: 5px; color: #00a32a;">' +
+                                    '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                                    '<strong>#' + attId + '</strong>: ' + (response.data.message || 'Fixed successfully!') +
+                                    '</div>'
+                                );
+                            } else {
+                                totalStillErrors++;
+                                var errorMsg = (response && response.data && response.data.message) || 'Still has errors';
+                                logDiv.append(
+                                    '<div style="margin-bottom: 5px; color: #d63638;">' +
+                                    '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                                    '<strong>#' + attId + '</strong>: ' + errorMsg +
+                                    '</div>'
+                                );
+                            }
+                            logDiv.scrollTop(logDiv[0].scrollHeight);
+                            
+                            // Update summary after each completion
+                            $('#reprocess-summary').show().html(
+                                '<strong>Reprocessed:</strong> ' + totalReprocessed + ' | ' +
+                                '<strong>Fixed:</strong> ' + totalFixed + ' | ' +
+                                '<strong>Still Errors:</strong> ' + totalStillErrors
+                            );
+                        }).fail(function() {
+                            totalReprocessed++;
+                            totalStillErrors++;
+                            var timestamp = new Date().toLocaleTimeString();
+                            var logDiv = $('#reprocess-log');
+                            logDiv.append(
+                                '<div style="margin-bottom: 5px; color: #d63638;">' +
+                                '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                                '<strong>#' + attId + '</strong>: Network error' +
+                                '</div>'
+                            );
+                            logDiv.scrollTop(logDiv[0].scrollHeight);
+                        });
+                    });
+                    
+                    currentIndex += batchSize;
+                    
+                    // Update progress
+                    var progressPercent = (currentIndex / errorIds.length) * 100;
+                    $('#reprocess-progress-bar').css('width', Math.min(100, progressPercent) + '%');
+                    $('#reprocess-progress-text').text('Reprocessed: ' + totalReprocessed + ' / ' + errorIds.length);
+                    
+                    // Update summary
+                    $('#reprocess-summary').show().html(
+                        '<strong>Reprocessed:</strong> ' + totalReprocessed + ' | ' +
+                        '<strong>Fixed:</strong> ' + totalFixed + ' | ' +
+                        '<strong>Still Errors:</strong> ' + totalStillErrors
+                    );
+                    
+                    // Continue with next batch after delay
+                    if (reprocessing) {
+                        setTimeout(reprocessBatch, 2000); // 2 second delay for reprocessing
+                    }
+                }
+                
+                $('#start-reprocess').click(function() {
+                    if (reprocessing) return;
+                    
+                    reprocessing = true;
+                    totalReprocessed = 0;
+                    totalFixed = 0;
+                    totalStillErrors = 0;
+                    currentIndex = 0;
+                    
+                    $(this).hide();
+                    $('#stop-reprocess').show();
+                    $('#reprocess-progress').show();
+                    $('#reprocess-log').empty();
+                    
+                    reprocessBatch();
+                });
+                
+                $('#stop-reprocess').click(function() {
+                    reprocessing = false;
+                    $('#start-reprocess').show();
+                    $(this).hide();
+                });
+            });
+            </script>
+        <?php
     }
 }
 
