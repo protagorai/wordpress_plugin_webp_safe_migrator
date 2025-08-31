@@ -97,9 +97,34 @@ case "$1" in
     plugins)
         echo -e "${CYAN}🔌 Multi-plugin management...${NC}"
         if [[ $# -eq 1 ]]; then
-            ./setup/multi-plugin-manager.sh list
+            # List available plugins
+            if [[ -f "setup/clean-plugin-list.ps1" ]]; then
+                powershell -ExecutionPolicy Bypass -File "setup/clean-plugin-list.ps1" -Action "list" 2>/dev/null || {
+                    echo -e "${YELLOW}PowerShell not available, using bash fallback...${NC}"
+                    if [[ -d "src" ]]; then
+                        echo "Available plugins in src/:"
+                        for plugin_dir in src/*/; do
+                            if [[ -d "$plugin_dir" ]]; then
+                                local plugin_name=$(basename "$plugin_dir")
+                                echo "  - $plugin_name"
+                            fi
+                        done
+                    fi
+                }
+            fi
+        elif [[ "$2" == "deploy" ]]; then
+            # Deploy plugins to container
+            echo -e "${CYAN}Deploying plugins to running container...${NC}"
+            if [[ -f "setup/deploy-plugins-to-container.sh" ]]; then
+                chmod +x setup/deploy-plugins-to-container.sh
+                ./setup/deploy-plugins-to-container.sh webp-migrator-wordpress --profile development
+            else
+                echo -e "${RED}Configuration deployment script not found${NC}"
+            fi
         else
-            ./setup/multi-plugin-manager.sh "${@:2}"
+            echo -e "${CYAN}Available plugin commands:${NC}"
+            echo "  list    - List available plugins"
+            echo "  deploy  - Deploy plugins to running container"
         fi
         ;;
     fix)

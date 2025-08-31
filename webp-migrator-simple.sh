@@ -146,12 +146,55 @@ if podman exec webp-migrator-wordpress wp core is-installed --allow-root 2>/dev/
     podman exec webp-migrator-wordpress find /var/www/html/wp-content -type f -exec chmod 644 {} \; 2>/dev/null
     echo -e "${GREEN}* WordPress ownership fixed AFTER installation - uploads will work correctly${NC}"
     
-    # Activate plugin
-    podman exec --user www-data webp-migrator-wordpress wp plugin activate webp-safe-migrator 2>/dev/null || true
+    # Deploy and activate plugins using configuration
+    echo -e "${CYAN}Deploying plugins using configuration...${NC}"
+    if [[ -f "setup/deploy-plugins-to-container.sh" ]]; then
+        chmod +x setup/deploy-plugins-to-container.sh
+        ./setup/deploy-plugins-to-container.sh webp-migrator-wordpress --profile development
+    else
+        echo -e "${YELLOW}Configuration-driven deployment not available, using fallback...${NC}"
+        
+        # Fallback: Deploy plugins manually
+        for plugin_dir in src/*/; do
+            if [[ -d "$plugin_dir" ]]; then
+                local plugin_name=$(basename "$plugin_dir")
+                local php_files=($(ls "${plugin_dir}"*.php 2>/dev/null || true))
+                
+                if [[ ${#php_files[@]} -gt 0 ]]; then
+                    echo -e "${CYAN}  - Installing plugin: $plugin_name${NC}"
+                    
+                    # Remove existing
+                    podman exec webp-migrator-wordpress rm -rf "/var/www/html/wp-content/plugins/$plugin_name" 2>/dev/null || true
+                    
+                    # Copy plugin
+                    if podman cp "$plugin_dir" "webp-migrator-wordpress:/var/www/html/wp-content/plugins/$plugin_name"; then
+                        echo -e "${GREEN}    ✓ Plugin $plugin_name deployed${NC}"
+                        
+                        # Fix permissions
+                        podman exec webp-migrator-wordpress chown -R www-data:www-data "/var/www/html/wp-content/plugins/$plugin_name" 2>/dev/null
+                        
+                        # Activate primary plugin only
+                        if [[ "$plugin_name" == "okvir-image-safe-migrator" ]]; then
+                            echo -e "${CYAN}    * Activating primary plugin...${NC}"
+                            if podman exec webp-migrator-wordpress wp plugin activate "$plugin_name" --allow-root 2>/dev/null; then
+                                echo -e "${GREEN}    ✓ Plugin $plugin_name activated${NC}"
+                            else
+                                echo -e "${YELLOW}    ! Plugin activation failed${NC}"
+                            fi
+                        else
+                            echo -e "${GRAY}    ○ Plugin $plugin_name deployed but not activated${NC}"
+                        fi
+                    else
+                        echo -e "${RED}    ✗ Failed to deploy plugin $plugin_name${NC}"
+                    fi
+                fi
+            fi
+        done
+    fi
     
     echo ""
     echo -e "${GREEN}=====================================${NC}"
-    echo -e "${GREEN}    SUCCESS - WebP Migrator Ready!${NC}"
+    echo -e "${GREEN}    SUCCESS - Multi-Plugin Environment Ready!${NC}"
     echo -e "${GREEN}=====================================${NC}"
     echo ""
     echo -e "${CYAN} WordPress: http://localhost:8080/wp-admin${NC}"
@@ -159,7 +202,8 @@ if podman exec webp-migrator-wordpress wp core is-installed --allow-root 2>/dev/
     echo -e "${CYAN} Password:  admin123${NC}"
     echo ""
     echo -e "${CYAN} phpMyAdmin: http://localhost:8081${NC}"
-    echo -e "${CYAN} Plugin: Media → WebP Migrator${NC}"
+    echo -e "${CYAN} Primary Plugin: Media → Image Migrator${NC}"
+    echo -e "${CYAN} Plugin Management: ./deploy.sh plugins list${NC}"
     echo ""
     
     # Open browser

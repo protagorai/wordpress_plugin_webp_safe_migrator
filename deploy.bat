@@ -128,7 +128,6 @@ podman run -d --name webp-migrator-wordpress --network webp-migrator-net ^
     -e WORDPRESS_DB_PASSWORD=%DB_WP_PASS% ^
     -e WORDPRESS_DB_NAME=%DB_NAME% ^
     -e WORDPRESS_DEBUG=1 ^
-    -v "%CD%\src:/var/www/html/wp-content/plugins/src-plugins" ^
     wordpress:latest >nul
 
 if errorlevel 1 (
@@ -192,37 +191,49 @@ if errorlevel 1 (
     podman exec webp-migrator-wordpress find /var/www/html/wp-content -type f -exec chmod 644 {} \; 2>nul
     echo * WordPress ownership fixed AFTER installation - uploads will work correctly
     
-    REM Deploy plugins using multi-plugin manager with configuration
-    echo Deploying plugins using multi-plugin configuration...
+    REM Deploy plugins using configuration-driven deployment
+    echo Deploying plugins using configuration from bin/config/plugins.yaml...
     
-    REM Use multi-plugin manager to deploy based on configuration
-    echo * Running multi-plugin deployment...
-    powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "deploy"
+    REM Use configuration-driven deployment script
+    echo * Reading deployment configuration for development profile...
+    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-to-container.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
     
     if errorlevel 1 (
-        echo ! Multi-plugin deployment failed, falling back to manual copy...
+        echo ! Configuration-driven deployment failed, falling back to manual plugin installation...
         
-        REM Fallback: Copy plugins manually
+        REM Fallback: Copy and activate plugins manually  
+        echo * Manual plugin deployment fallback...
         for /d %%i in (src\*) do (
             if exist "%%i\*.php" (
-                echo   - Copying plugin: %%~ni
-                podman cp "%%i" webp-migrator-wordpress:/var/www/html/wp-content/plugins/ 2>nul
+                echo   - Installing plugin: %%~ni
+                podman exec webp-migrator-wordpress rm -rf "/var/www/html/wp-content/plugins/%%~ni" 2>nul
+                podman cp "%%i" webp-migrator-wordpress:/var/www/html/wp-content/plugins/%%~ni 2>nul
+                
+                if not errorlevel 1 (
+                    echo     ✓ Plugin %%~ni copied successfully
+                    
+                    REM Fix permissions  
+                    podman exec webp-migrator-wordpress chown -R www-data:www-data "/var/www/html/wp-content/plugins/%%~ni" 2>nul
+                    
+                    REM Activate primary plugin only
+                    if "%%~ni"=="okvir-image-safe-migrator" (
+                        echo     * Activating primary plugin...
+                        podman exec webp-migrator-wordpress wp plugin activate %%~ni --allow-root 2>nul
+                        if not errorlevel 1 (
+                            echo     ✓ Plugin %%~ni activated
+                        ) else (
+                            echo     ! Plugin %%~ni activation failed
+                        )
+                    ) else (
+                        echo     ○ Plugin %%~ni deployed but not activated
+                    )
+                ) else (
+                    echo     ✗ Failed to copy plugin %%~ni
+                )
             )
         )
-        
-        REM Fix permissions for all plugins
-        podman exec webp-migrator-wordpress chown -R www-data:www-data /var/www/html/wp-content/plugins/ 2>nul
-        
-        REM Activate primary plugin
-        echo * Activating Okvir Image Safe Migrator...
-        podman exec webp-migrator-wordpress wp plugin activate okvir-image-safe-migrator --allow-root 2>nul
-        if not errorlevel 1 (
-            echo * Primary plugin activated successfully!
-        ) else (
-            echo ! Plugin activation failed - activate manually in WordPress admin
-        )
     ) else (
-        echo * Multi-plugin deployment completed successfully!
+        echo * Configuration-driven plugin deployment completed successfully!
     )
 )
 
@@ -308,8 +319,14 @@ goto end
 echo 🔌 Multi-plugin management...
 if "%2"=="" (
     powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "list"
+) else if "%2"=="deploy" (
+    echo * Deploying plugins to running container...
+    powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-to-container.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
 ) else (
-    powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "%2"
+    echo Available plugin commands:
+    echo   list    - List available plugins
+    echo   deploy  - Deploy plugins to running container
+    powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "list"
 )
 goto end
 
