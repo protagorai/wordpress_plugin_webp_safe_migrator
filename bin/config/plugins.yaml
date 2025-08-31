@@ -49,7 +49,7 @@ deployment:
           log_level: "debug"
           
       - slug: "example-second-plugin"
-        activate: false                          # Available but not auto-activated
+        activate: true                           # 🔧 Changed to activate
         config_override:
           log_level: "debug"
 

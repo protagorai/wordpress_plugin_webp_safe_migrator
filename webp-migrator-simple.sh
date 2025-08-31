@@ -173,9 +173,9 @@ if podman exec webp-migrator-wordpress wp core is-installed --allow-root 2>/dev/
                         # Fix permissions
                         podman exec webp-migrator-wordpress chown -R www-data:www-data "/var/www/html/wp-content/plugins/$plugin_name" 2>/dev/null
                         
-                        # Activate primary plugin only
-                        if [[ "$plugin_name" == "okvir-image-safe-migrator" ]]; then
-                            echo -e "${CYAN}    * Activating primary plugin...${NC}"
+                        # Activate plugins based on development profile defaults
+                        if [[ "$plugin_name" == "okvir-image-safe-migrator" ]] || [[ "$plugin_name" == "example-second-plugin" ]]; then
+                            echo -e "${CYAN}    * Activating plugin: $plugin_name${NC}"
                             if podman exec webp-migrator-wordpress wp plugin activate "$plugin_name" --allow-root 2>/dev/null; then
                                 echo -e "${GREEN}    ✓ Plugin $plugin_name activated${NC}"
                             else

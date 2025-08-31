@@ -215,9 +215,17 @@ if errorlevel 1 (
                     REM Fix permissions  
                     podman exec webp-migrator-wordpress chown -R www-data:www-data "/var/www/html/wp-content/plugins/%%~ni" 2>nul
                     
-                    REM Activate primary plugin only
+                    REM Activate plugins based on development profile defaults
                     if "%%~ni"=="okvir-image-safe-migrator" (
                         echo     * Activating primary plugin...
+                        podman exec webp-migrator-wordpress wp plugin activate %%~ni --allow-root 2>nul
+                        if not errorlevel 1 (
+                            echo     ✓ Plugin %%~ni activated
+                        ) else (
+                            echo     ! Plugin %%~ni activation failed
+                        )
+                    ) else if "%%~ni"=="example-second-plugin" (
+                        echo     * Activating example plugin...
                         podman exec webp-migrator-wordpress wp plugin activate %%~ni --allow-root 2>nul
                         if not errorlevel 1 (
                             echo     ✓ Plugin %%~ni activated
