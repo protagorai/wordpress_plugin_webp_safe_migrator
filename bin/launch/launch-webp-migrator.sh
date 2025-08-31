@@ -19,13 +19,8 @@ echo "  WebP Safe Migrator Launcher"
 echo "====================================="
 echo ""
 
-# Check if we're in the right directory
-if [[ ! -f "src/webp-safe-migrator.php" ]]; then
-    echo -e "${RED}ERROR: Please run this script from the project root directory.${NC}"
-    echo "Expected to find: src/webp-safe-migrator.php"
-    echo "Current directory: $(pwd)"
-    exit 1
-fi
+# Note: This script is designed to be called from the main webp-migrator.sh entry point
+# The main entry point ensures proper directory context
 
 # Check if Podman is available
 echo "Checking Podman..."
@@ -389,6 +384,25 @@ case "$(uname -s)" in
         ;;
 esac
 
+# FINAL COMPREHENSIVE OWNERSHIP FIX - After ALL deployment is complete
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE} FINAL OWNERSHIP FIX (COMPREHENSIVE)${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+echo "Applying final WordPress ownership fix..."
+echo "This ensures uploads work correctly after complete deployment."
+echo ""
+
+# Final comprehensive ownership fix with simple commands
+echo "[FINAL-FIX] Applying comprehensive ownership fix..."
+podman exec webp-migrator-wordpress chown -R www-data:www-data /var/www/html/wp-content/ 2>/dev/null
+podman exec webp-migrator-wordpress find /var/www/html/wp-content -type d -exec chmod 755 {} \; 2>/dev/null
+podman exec webp-migrator-wordpress find /var/www/html/wp-content -type f -exec chmod 644 {} \; 2>/dev/null
+echo "[FINAL-FIX] WordPress ownership fix complete"
+
+echo -e "${GREEN}* Final ownership fix applied - uploads will work correctly${NC}"
+
 echo ""
 echo -e "${GREEN}=====================================${NC}"
 echo -e "${GREEN}   🎉 SUCCESS! SETUP COMPLETE! 🎉${NC}"  
@@ -409,12 +423,12 @@ echo "=========================================="
 echo ""
 echo -e "${GREEN}SUCCESS! WordPress with WebP Safe Migrator is ready!${NC}"
 echo ""
-echo "Management Scripts Available:"
-echo "  ./launch-webp-migrator.sh        - Start/restart (this script)"
-echo "  ./stop-webp-migrator.sh          - Stop containers (keep data)"
-echo "  ./cleanup-webp-migrator.sh       - Complete cleanup (removes all data)"
-echo "  ./status-webp-migrator.sh        - Show status"
-echo "  ./manage-wp.sh                   - WordPress management commands"
+echo "Management Commands Available:"
+echo "  ./webp-migrator.sh start         - Start/restart the environment"
+echo "  ./webp-migrator.sh stop          - Stop containers (keep data)"
+echo "  ./webp-migrator.sh clean         - Complete cleanup (removes all data)"
+echo "  ./webp-migrator.sh status        - Show container status"
+echo "  ./webp-migrator.sh manage        - WordPress management utilities"
 echo ""
 echo "Script completed successfully!"
 echo ""

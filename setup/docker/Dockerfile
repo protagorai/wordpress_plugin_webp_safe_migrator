@@ -84,10 +84,10 @@ RUN a2enmod ssl rewrite headers expires deflate
 RUN mkdir -p /etc/ssl/certs/webp-migrator
 
 # Copy custom Apache configuration
-COPY apache-ssl.conf /etc/apache2/sites-available/webp-migrator-ssl.conf
+COPY configs/apache-ssl.conf /etc/apache2/sites-available/webp-migrator-ssl.conf
 
 # Create startup script for SSL setup
-COPY docker-entrypoint-ssl.sh /usr/local/bin/
+COPY docker/docker-entrypoint-ssl.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint-ssl.sh
 
 # Create log directories
@@ -96,6 +96,14 @@ RUN mkdir -p /var/log/webp-migrator && \
 
 # Set working directory
 WORKDIR /var/www/html
+
+# Ensure WordPress directories are owned by www-data from the start
+RUN chown -R www-data:www-data /var/www/html
+
+# Pre-create uploads directory with correct ownership to prevent root creation
+RUN mkdir -p /var/www/html/wp-content/uploads && \
+    chown -R www-data:www-data /var/www/html/wp-content/uploads && \
+    chmod -R 755 /var/www/html/wp-content/uploads
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

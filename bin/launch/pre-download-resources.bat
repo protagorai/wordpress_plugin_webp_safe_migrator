@@ -42,41 +42,44 @@ echo.
 echo 📦 Starting resource downloads...
 echo.
 
-REM Function to show download progress with spinner
-:download_with_progress
-setlocal
-set "resource_name=%~1"
-set "command=%~2"
-set "success_msg=%~3"
-
-echo ⠋ Downloading %resource_name%...
-
-REM Start the download in background and capture output
-%command% > temp_download.log 2>&1
+REM Download WordPress image
+echo ⠋ Downloading WordPress Docker Image...
+%CONTAINER_ENGINE% pull docker.io/library/wordpress:latest >nul 2>&1
 if errorlevel 1 (
-    echo ❌ Failed to download %resource_name%
-    echo Error details:
-    type temp_download.log
-    del temp_download.log >nul 2>&1
-    echo.
-    echo Press any key to copy this error and continue...
+    echo ❌ Failed to download WordPress image
+    echo Error: Check your internet connection and container engine
+    echo Press any key to continue...
     pause >nul
 ) else (
-    echo ✅ %success_msg%
-    del temp_download.log >nul 2>&1
+    echo ✅ WordPress image ready
 )
 echo.
-endlocal
-goto :eof
-
-REM Download WordPress image
-call :download_with_progress "WordPress Docker Image" "%CONTAINER_ENGINE% pull docker.io/library/wordpress:latest" "WordPress image ready"
 
 REM Download MySQL image  
-call :download_with_progress "MySQL Docker Image" "%CONTAINER_ENGINE% pull docker.io/library/mysql:8.0" "MySQL image ready"
+echo ⠙ Downloading MySQL Docker Image...
+%CONTAINER_ENGINE% pull docker.io/library/mysql:8.0 >nul 2>&1
+if errorlevel 1 (
+    echo ❌ Failed to download MySQL image
+    echo Error: Check your internet connection and container engine
+    echo Press any key to continue...
+    pause >nul
+) else (
+    echo ✅ MySQL image ready
+)
+echo.
 
 REM Download phpMyAdmin image
-call :download_with_progress "phpMyAdmin Docker Image" "%CONTAINER_ENGINE% pull docker.io/library/phpmyadmin:latest" "phpMyAdmin image ready"
+echo ⠹ Downloading phpMyAdmin Docker Image...
+%CONTAINER_ENGINE% pull docker.io/library/phpmyadmin:latest >nul 2>&1
+if errorlevel 1 (
+    echo ❌ Failed to download phpMyAdmin image
+    echo Error: Check your internet connection and container engine
+    echo Press any key to continue...
+    pause >nul
+) else (
+    echo ✅ phpMyAdmin image ready
+)
+echo.
 
 REM Download WP-CLI
 echo ⠦ Downloading WP-CLI tool...

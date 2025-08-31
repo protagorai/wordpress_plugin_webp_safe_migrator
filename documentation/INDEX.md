@@ -4,6 +4,8 @@
 
 ### 📋 Overview & Getting Started
 - **[Main README](../README.md)** - Quick start guide, installation, and basic usage
+- **[✨ Simple Setup Guide](../docs/guides/SIMPLE_README.md)** - One-command minimal setup for immediate use
+- **[📦 System Requirements](SYSTEM_REQUIREMENTS.md)** - Container engine installation and system setup
 - **[Requirements Analysis](REQUIREMENTS_ANALYSIS.md)** - Complete requirements satisfaction analysis
 - **[Original Requirements](prompt.1.txt)** - Initial project requirements and specifications
 - **[Initial Design Response](response.1.txt)** - Original architectural approach and design decisions

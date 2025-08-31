@@ -242,6 +242,8 @@ wp webp-migrator stats
 
 ### Quick Operations
 - **[🚀 Launcher Scripts Guide](documentation/LAUNCHER_SCRIPTS.md)** - **← EASIEST START** - Simple deployment scripts
+- **[✨ Simple Setup Guide](docs/guides/SIMPLE_README.md)** - One-command setup for immediate use
+- **[📦 System Requirements](documentation/SYSTEM_REQUIREMENTS.md)** - Container engine installation and setup
 - **[🎛️ Operations Index](setup/OPERATIONS_INDEX.md)** - Complete task navigation  
 - **[🎯 Command Cheat Sheet](setup/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
 - **[⚙️ Configuration Examples](setup/CONFIG_EXAMPLES.md)** - Customize usernames, passwords, domains, ports
@@ -313,6 +315,10 @@ phpunit
 - **Memory**: 256MB+ (512MB+ for large libraries)
 - **WebP Support**: GD with `imagewebp()` or Imagick with WebP format
 
+### Development Environment Requirements
+- **Container Engine**: Podman (recommended) or Docker
+- **See**: **[📦 System Requirements Guide](documentation/SYSTEM_REQUIREMENTS.md)** for complete installation instructions
+
 ### Server Requirements
 - File system write permissions to `wp-content/uploads/`
 - Adequate execution time limits for batch processing
@@ -353,6 +359,8 @@ GPL-2.0+ (GNU General Public License v2.0 or later) - Compatible with WordPress 
 
 **🔗 Quick Navigation:**
 [🚀 Launcher](documentation/LAUNCHER_SCRIPTS.md) | 
+[✨ Simple Setup](docs/guides/SIMPLE_README.md) |
+[📦 Requirements](documentation/SYSTEM_REQUIREMENTS.md) |
 [🎛️ Operations](setup/OPERATIONS_INDEX.md) | 
 [🎯 Commands](setup/COMMAND_CHEAT_SHEET.md) |
 [⚙️ Config](setup/CONFIG_EXAMPLES.md) |

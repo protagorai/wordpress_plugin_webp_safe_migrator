@@ -14,18 +14,12 @@ echo   WebP Safe Migrator Launcher v3
 echo =====================================
 echo.
 
-REM Check if we're in the right directory
-if not exist "src\webp-safe-migrator.php" (
-    echo ERROR: Please run this script from the project root directory.
-    echo Expected to find: src\webp-safe-migrator.php
-    echo Current directory: %CD%
-    pause
-    exit /b 1
-)
+REM Note: This script is designed to be called from the main webp-migrator.bat entry point
+REM The main entry point ensures proper directory context
 
 REM Load configuration from .env file
 echo Loading configuration...
-call load-config.bat
+call bin\config\load-config.bat
 
 REM Check if Podman is available
 echo Checking Podman...
@@ -42,39 +36,8 @@ echo.
 echo Starting WebP Safe Migrator deployment...
 echo.
 
-REM Check if resources are pre-downloaded for faster setup
-echo 🔍 Checking for pre-downloaded resources...
-set FAST_SETUP=false
-
-podman images docker.io/library/wordpress:latest --format "{{.Repository}}" 2>nul | findstr wordpress >nul
-if not errorlevel 1 (
-    podman images docker.io/library/mysql:8.0 --format "{{.Repository}}" 2>nul | findstr mysql >nul
-    if not errorlevel 1 (
-        podman images docker.io/library/phpmyadmin:latest --format "{{.Repository}}" 2>nul | findstr phpmyadmin >nul
-        if not errorlevel 1 (
-            echo ⚡ All Docker images already downloaded - enabling FAST SETUP mode!
-            set FAST_SETUP=true
-        )
-    )
-)
-
-if "%FAST_SETUP%"=="false" (
-    echo ⚠️  Docker images not pre-downloaded - setup will be slower
-    echo 💡 TIP: Run 'pre-download-resources.bat' first for faster setups
-    echo.
-    set /p predownload="Download resources now for faster setup? (Y/N): "
-    if /i "!predownload!"=="Y" (
-        echo.
-        echo 🚀 Running pre-download process...
-        call pre-download-resources.bat
-        echo.
-        echo 📋 Pre-download completed, continuing with fast setup...
-        set FAST_SETUP=true
-    ) else (
-        echo 📊 Continuing with standard setup (will download during container start)
-    )
-)
-echo.
+REM Simplified setup - no complex pre-download logic
+echo Starting deployment...
 
 REM Clean up existing containers first
 echo Cleaning up existing containers...
@@ -100,11 +63,7 @@ echo * Network created
 echo.
 
 REM Start MySQL
-if "%FAST_SETUP%"=="true" (
-    echo ⚡ Starting MySQL database (using pre-downloaded image)...
-) else (
-    echo ⠋ Starting MySQL database (downloading if needed)...
-)
+echo Starting MySQL database...
 echo * Database: %DB_NAME%
 echo * WordPress user: %DB_WP_USER%
 echo * Port: %DB_PORT%
@@ -121,10 +80,10 @@ if errorlevel 1 (
 echo * MySQL container started
 
 echo.
-echo ⠋ Waiting for MySQL to be ready (45 seconds)...
+echo Waiting for MySQL to be ready (45 seconds)...
 timeout /t 45 /nobreak >nul
 
-echo ⠙ Testing MySQL connection...
+echo Testing MySQL connection...
 podman exec webp-migrator-mysql mysqladmin ping -u root -p%DB_ROOT_PASS% 2>nul >nul
 if errorlevel 1 (
     echo MySQL not ready yet, trying once more...
@@ -146,11 +105,7 @@ echo * MySQL is ready!
 echo.
 
 REM Start WordPress
-if "%FAST_SETUP%"=="true" (
-    echo ⚡ Starting WordPress (using pre-downloaded image)...
-) else (
-    echo ⠙ Starting WordPress (downloading if needed)...
-)
+echo Starting WordPress...
 echo * WordPress port: %WP_PORT%
 echo * Site URL: %WP_SITE_URL%
 podman run -d --name webp-migrator-wordpress --network webp-migrator-net -p %WP_PORT%:80 -e WORDPRESS_DB_HOST=webp-migrator-mysql -e WORDPRESS_DB_USER=%DB_WP_USER% -e WORDPRESS_DB_PASSWORD=%DB_WP_PASS% -e WORDPRESS_DB_NAME=%DB_NAME% -e WORDPRESS_DEBUG=1 -v "%CD%\src:/var/www/html/wp-content/plugins/webp-safe-migrator" docker.io/library/wordpress:latest
@@ -169,11 +124,7 @@ echo * WordPress container started
 echo.
 
 REM Start phpMyAdmin
-if "%FAST_SETUP%"=="true" (
-    echo ⚡ Starting phpMyAdmin (using pre-downloaded image)...
-) else (
-    echo ⠹ Starting phpMyAdmin (downloading if needed)...
-)
+echo Starting phpMyAdmin...
 echo * phpMyAdmin port: %PMA_PORT%
 podman run -d --name webp-migrator-phpmyadmin --network webp-migrator-net -p %PMA_PORT%:80 -e PMA_HOST=webp-migrator-mysql -e PMA_USER=root -e PMA_PASSWORD=%DB_ROOT_PASS% docker.io/library/phpmyadmin:latest
 
@@ -189,11 +140,11 @@ if errorlevel 1 (
 echo * phpMyAdmin container started
 
 echo.
-echo ⠹ Waiting for WordPress to be ready (60 seconds)...
+echo Waiting for WordPress to be ready (60 seconds)...
 echo   This is normal - WordPress needs time to download and setup...
 timeout /t 60 /nobreak >nul
 
-echo ⠸ Testing WordPress connection with detailed diagnostics...
+echo Testing WordPress connection with detailed diagnostics...
 echo * Site URL: %WP_SITE_URL%
 echo * Expected response: 200 or 30x redirect codes
 echo.
@@ -227,12 +178,12 @@ if errorlevel 1 (
 )
 
 echo * Testing database connection...
-podman exec webp-migrator-wordpress mysql -h webp-migrator-mysql -u wordpress -pwordpress123 -e "SELECT 'Database connection: OK';" 2>nul
+podman exec webp-migrator-wordpress mysql -h webp-migrator-mysql -u wpuser -pwppass -e "SELECT 'Database connection: OK';" 2>nul
 if errorlevel 1 (
     echo ! Database connection failed - checking database container...
     podman ps --filter "name=webp-migrator-mysql" --format "table {{.Names}}\t{{.Status}}"
     echo ! Trying direct database connection test...
-    podman exec webp-migrator-mysql mysql -u wordpress -pwordpress123 -e "SELECT 'Direct DB connection: OK';" 2>nul
+    podman exec webp-migrator-mysql mysql -u wpuser -pwppass -e "SELECT 'Direct DB connection: OK';" 2>nul
     if errorlevel 1 (
         echo ! Direct database connection also failed
         echo.
@@ -283,10 +234,7 @@ for /l %%i in (1,1,5) do (
     )
     
     if %%i lss 5 (
-        if %%i==1 echo   ⠧ Waiting 10 seconds before retry...
-        if %%i==2 echo   ⠇ Waiting 10 seconds before retry...
-        if %%i==3 echo   ⠏ Waiting 10 seconds before retry...
-        if %%i==4 echo   ⠋ Waiting 10 seconds before retry...
+        echo   Waiting 10 seconds before retry...
         timeout /t 10 /nobreak >nul
     )
 )
@@ -321,18 +269,18 @@ echo.
 
 REM Use the WordPress container directly for setup since it has WP-CLI
 REM Configure PHP for optimal WebP processing
-echo ⠼ Configuring PHP upload limits...
+echo Configuring PHP upload limits...
 podman exec webp-migrator-wordpress bash -c "echo 'upload_max_filesize = 128M' > /usr/local/etc/php/conf.d/webp-migrator.ini && echo 'post_max_size = 128M' >> /usr/local/etc/php/conf.d/webp-migrator.ini && echo 'max_execution_time = 300' >> /usr/local/etc/php/conf.d/webp-migrator.ini && echo 'memory_limit = 512M' >> /usr/local/etc/php/conf.d/webp-migrator.ini"
 
 echo Restarting Apache to apply PHP configuration...
 podman exec webp-migrator-wordpress apache2ctl graceful 2>nul
 
-echo ⠴ Installing WP-CLI in WordPress container...
+echo Installing WP-CLI in WordPress container...
 if exist "temp_wpcli.phar" (
     echo * Using pre-downloaded WP-CLI for faster setup...
     podman cp temp_wpcli.phar webp-migrator-wordpress:/tmp/wp-cli.phar
     podman exec webp-migrator-wordpress bash -c "chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp"
-    echo ⚡ WP-CLI installed from pre-downloaded file
+    echo * WP-CLI installed from pre-downloaded file
 ) else (
     echo * Downloading WP-CLI during setup...
     podman exec webp-migrator-wordpress bash -c "curl -o /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp" 2>nul
@@ -342,7 +290,7 @@ if exist "temp_wpcli.phar" (
 echo.
 
 REM Install WordPress
-echo ⠦ Installing WordPress...
+echo Installing WordPress...
 echo * Admin user: %WP_ADMIN_USER%
 echo * Admin password: %WP_ADMIN_PASS%
 echo * Site title: %WP_SITE_TITLE%
@@ -368,8 +316,13 @@ if not errorlevel 1 (
 )
 
 echo * WordPress not installed, installing now...
-echo DEBUG: Running WP-CLI install command with these exact values...
-podman exec webp-migrator-wordpress wp core install --url="%WP_SITE_URL%" --title="%WP_SITE_TITLE%" --admin_user="%WP_ADMIN_USER%" --admin_password="%WP_ADMIN_PASS%" --admin_email="%WP_ADMIN_EMAIL%" --locale="en_US" --skip-email --allow-root
+podman exec webp-migrator-wordpress wp core install ^
+    --url="%WP_SITE_URL%" ^
+    --title="%WP_SITE_TITLE%" ^
+    --admin_user="%WP_ADMIN_USER%" ^
+    --admin_password="%WP_ADMIN_PASS%" ^
+    --admin_email="%WP_ADMIN_EMAIL%" ^
+    --skip-email --allow-root
 
 if errorlevel 1 (
     echo ! WordPress installation had issues - you may need to complete setup manually
@@ -385,6 +338,13 @@ if errorlevel 1 (
     pause >nul
 ) else (
     echo * WordPress installed successfully!
+    
+    REM CRITICAL: Fix ownership AFTER WordPress installation completes
+    echo Fixing WordPress ownership after installation...
+    podman exec webp-migrator-wordpress chown -R www-data:www-data /var/www/html/wp-content/ 2>nul
+    podman exec webp-migrator-wordpress find /var/www/html/wp-content -type d -exec chmod 755 {} \; 2>nul
+    podman exec webp-migrator-wordpress find /var/www/html/wp-content -type f -exec chmod 644 {} \; 2>nul
+    echo * WordPress ownership fixed AFTER installation - uploads will work correctly
 )
 
 :wordpress_installed
@@ -396,7 +356,7 @@ echo * WordPress installation completed with configured admin credentials
 echo.
 
 REM Activate plugin
-echo ⠙ Activating WebP Safe Migrator plugin...
+echo Activating WebP Safe Migrator plugin...
 podman exec webp-migrator-wordpress wp plugin activate webp-safe-migrator --allow-root
 
 if errorlevel 1 (
@@ -426,6 +386,25 @@ echo.
 echo Checking final container status...
 podman ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
+REM FINAL COMPREHENSIVE OWNERSHIP FIX - After ALL deployment is complete
+echo.
+echo ========================================
+echo  FINAL OWNERSHIP FIX (COMPREHENSIVE)
+echo ========================================
+echo.
+echo Applying final WordPress ownership fix...
+echo This ensures uploads work correctly after complete deployment.
+echo.
+
+REM Final comprehensive ownership fix with simple commands
+echo [FINAL-FIX] Applying comprehensive ownership fix...
+podman exec webp-migrator-wordpress chown -R www-data:www-data /var/www/html/wp-content/ 2>nul
+podman exec webp-migrator-wordpress find /var/www/html/wp-content -type d -exec chmod 755 {} \; 2>nul
+podman exec webp-migrator-wordpress find /var/www/html/wp-content -type f -exec chmod 644 {} \; 2>nul
+echo [FINAL-FIX] WordPress ownership fix complete
+
+echo * Final ownership fix applied - uploads will work correctly
+
 echo.
 echo =====================================
 echo   DEPLOYMENT COMPLETE!
@@ -445,7 +424,7 @@ echo   Database: %DB_NAME%
 echo   WordPress User: %DB_WP_USER% / %DB_WP_PASS%
 echo   Root User: root / %DB_ROOT_PASS%
 echo.
-echo Configuration File: webp-migrator.env
+echo Configuration File: bin\config\webp-migrator.env
 echo.
 echo Plugin Access:
 echo   Go to Media → WebP Migrator in WordPress admin
@@ -461,15 +440,15 @@ echo   🎉 SUCCESS! SETUP COMPLETE! 🎉
 echo =====================================
 echo.
 echo IMPORTANT: Your credentials are configurable!
-echo Edit 'webp-migrator.env' to customize usernames/passwords
+echo Edit 'bin\config\webp-migrator.env' to customize usernames/passwords
 echo Then run this script again to apply changes.
 echo.
-echo Management Scripts Available:
-echo   launch-webp-migrator.bat        - Start/restart (this script)
-echo   stop-webp-migrator.bat          - Stop containers (keep data)
-echo   cleanup-webp-migrator.bat       - Complete cleanup (removes all data)
-echo   status-webp-migrator.bat        - Show status
-echo   manage-wp.bat                   - WordPress management commands
+echo Management Commands Available:
+echo   webp-migrator.bat start         - Start/restart the environment  
+echo   webp-migrator.bat stop          - Stop containers (keep data)
+echo   webp-migrator.bat clean         - Complete cleanup (removes all data)
+echo   webp-migrator.bat status        - Show container status
+echo   webp-migrator.bat manage        - WordPress management utilities
 echo.
 echo ✅ Installation completed successfully!
 echo 

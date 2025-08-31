@@ -106,28 +106,41 @@ setup_letsencrypt() {
     log_success "Let's Encrypt directory structure ready"
 }
 
-# Initialize WordPress directories with proper ownership
-initialize_wordpress_directories() {
-    log_info "Initializing WordPress directories..."
+# Fix WordPress ownership with comprehensive monitoring
+fix_wordpress_ownership() {
+    log_info "Setting up WordPress ownership management..."
     
-    # Create uploads directory with correct ownership from the start
-    # (No longer needed since we removed the problematic volume mount)
-    if [[ ! -d "/var/www/html/wp-content/uploads" ]]; then
-        mkdir -p /var/www/html/wp-content/uploads
-        chown www-data:www-data /var/www/html/wp-content/uploads
-        chmod 755 /var/www/html/wp-content/uploads
-        log_info "Created uploads directory with www-data ownership"
-    fi
+    # Create comprehensive ownership fix script
+    cat > /usr/local/bin/fix-wp-ownership.sh << 'EOF'
+#!/bin/bash
+# Comprehensive WordPress ownership fix
+chown -R www-data:www-data /var/www/html/wp-content/ 2>/dev/null
+find /var/www/html/wp-content -type d -exec chmod 755 {} \; 2>/dev/null
+find /var/www/html/wp-content -type f -exec chmod 644 {} \; 2>/dev/null
+EOF
+    chmod +x /usr/local/bin/fix-wp-ownership.sh
     
-    log_success "WordPress directories initialized"
+    # Run initial fix after WordPress starts
+    (
+        sleep 30  # Wait for WordPress to initialize
+        /usr/local/bin/fix-wp-ownership.sh
+        
+        # Then monitor continuously
+        while true; do
+            sleep 60  # Check every minute
+            /usr/local/bin/fix-wp-ownership.sh
+        done
+    ) &
+    
+    log_success "WordPress ownership monitoring enabled"
 }
 
 # Main SSL setup function
 setup_ssl() {
     log_info "Starting SSL setup for WebP Safe Migrator..."
     
-    # Initialize WordPress directories with proper ownership
-    initialize_wordpress_directories
+    # Fix WordPress ownership comprehensively 
+    fix_wordpress_ownership
     
     # Check if SSL is enabled via environment variable
     if [[ "${ENABLE_SSL:-true}" == "true" ]]; then
