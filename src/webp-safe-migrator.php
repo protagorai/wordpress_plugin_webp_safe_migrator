@@ -327,6 +327,34 @@ class WebP_Safe_Migrator {
                 }
             }
         }
+
+        // Rollback single conversion
+        if (isset($_POST['rollback_single']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'rollback_single')) {
+            $att_id = (int)($_POST['attachment_id'] ?? 0);
+            if ($att_id > 0) {
+                $rolled_back = $this->rollback_conversion($att_id);
+                if ($rolled_back) {
+                    add_settings_error('webp_safe_migrator', 'rolled_back', "Successfully rolled back conversion for attachment #{$att_id}.", 'updated');
+                } else {
+                    add_settings_error('webp_safe_migrator', 'rollback_failed', "Rollback failed for attachment #{$att_id} - backup may not exist.", 'error');
+                }
+            }
+        }
+
+        // Rollback all pending conversions
+        if (isset($_POST['rollback_all_pending']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'rollback_all')) {
+            global $wpdb;
+            $ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT p.ID FROM {$wpdb->posts} p LEFT JOIN {$wpdb->postmeta} pm ON p.ID=pm.post_id
+                 WHERE p.post_type='attachment' AND pm.meta_key=%s AND pm.meta_value='relinked'",
+                 self::STATUS_META
+            ));
+            $count = 0;
+            foreach ($ids as $att_id) {
+                if ($this->rollback_conversion((int)$att_id)) $count++;
+            }
+            add_settings_error('webp_safe_migrator', 'rollback_all', "Rolled back conversions for {$count} attachments.", 'updated');
+        }
     }
 
     private function current_validation_mode(): bool {
@@ -1114,20 +1142,33 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             echo '<td>'.esc_html($r['post_title']).'</td>';
             echo '<td>'.$thumb.'</td>';
             echo '<td>';
+            // Commit button
             echo '<form method="post" style="display:inline-block;margin-right:6px;">';
             wp_nonce_field('commit_one', self::NONCE);
             echo '<input type="hidden" name="attachment_id" value="'.esc_attr($id).'">';
-            echo '<button class="button button-primary" name="webp_migrator_commit_one" value="1">Commit delete</button>';
+            echo '<button class="button button-primary" name="webp_migrator_commit_one" value="1" title="Permanently delete original files">Commit Delete</button>';
+            echo '</form>';
+            // Rollback button
+            echo '<form method="post" style="display:inline-block;" onsubmit="return confirm(\'Rollback conversion? This will restore the original image and undo the conversion.\');">';
+            wp_nonce_field('rollback_single', self::NONCE);
+            echo '<input type="hidden" name="attachment_id" value="'.esc_attr($id).'">';
+            echo '<button class="button button-secondary" name="rollback_single" value="1" title="Restore original image and undo conversion">Rollback</button>';
             echo '</form>';
             echo '</td>';
             echo '</tr>';
         }
         echo '</tbody></table>';
 
-        echo '<form method="post" style="margin-top:10px;">';
+        echo '<div style="margin-top:10px;">';
+        echo '<form method="post" style="display:inline-block;margin-right:10px;">';
         wp_nonce_field('commit_all', self::NONCE);
-        echo '<button class="button" name="webp_migrator_commit_all" value="1">Commit ALL above</button>';
+        echo '<button class="button button-primary" name="webp_migrator_commit_all" value="1" title="Permanently delete all original files above">Commit ALL Above</button>';
         echo '</form>';
+        echo '<form method="post" style="display:inline-block;" onsubmit="return confirm(\'Rollback ALL conversions? This will restore all original images and undo all conversions above.\');">';
+        wp_nonce_field('rollback_all', self::NONCE);
+        echo '<button class="button button-secondary" name="rollback_all_pending" value="1" title="Restore all original images and undo all conversions above">Rollback ALL Above</button>';
+        echo '</form>';
+        echo '</div>';
     }
 
     private function render_queue_preview() {
@@ -1330,6 +1371,12 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             // Skip if this attachment has logged errors
             if ($exclude_errors && in_array($id, $error_ids)) {
                 continue;
+            }
+            
+            // CRITICAL: Skip if already processed (check conversion status)
+            $current_status = get_post_meta($id, self::STATUS_META, true);
+            if (in_array($current_status, ['relinked', 'committed'])) {
+                continue; // Already converted - don't reprocess
             }
             
             $mime = get_post_mime_type($id);
@@ -2323,6 +2370,128 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         update_post_meta($att_id, self::STATUS_META, 'committed');
         delete_post_meta($att_id, self::BACKUP_META);
         return true;
+    }
+
+    /**
+     * Rollback a conversion by restoring original files from backup
+     */
+    private function rollback_conversion($att_id) {
+        $status = get_post_meta($att_id, self::STATUS_META, true);
+        if ($status !== 'relinked') return false; // Can only rollback pending conversions
+
+        $backup_dir = get_post_meta($att_id, self::BACKUP_META, true);
+        if (!$backup_dir || !is_dir($backup_dir)) {
+            return false; // No backup directory exists
+        }
+
+        // Get original metadata before conversion
+        $uploads = wp_get_upload_dir();
+        $current_file = get_attached_file($att_id);
+        $current_meta = wp_get_attachment_metadata($att_id);
+        
+        if (!$current_file || !$current_meta) {
+            return false; // Cannot determine current file structure
+        }
+
+        try {
+            // Build paths for restoration
+            $current_dir = dirname($current_file);
+            $backup_files = scandir($backup_dir);
+            
+            // Find and restore original files from backup
+            $restored_files = [];
+            foreach ($backup_files as $backup_file) {
+                if ($backup_file === '.' || $backup_file === '..') continue;
+                
+                $backup_path = trailingslashit($backup_dir) . $backup_file;
+                if (is_file($backup_path)) {
+                    // Determine if this is the main file or a size variant
+                    $restore_path = trailingslashit($current_dir) . $backup_file;
+                    
+                    // Copy back from backup (don't move - keep backup until committed)
+                    if (@copy($backup_path, $restore_path)) {
+                        $restored_files[] = $restore_path;
+                    }
+                }
+            }
+            
+            if (empty($restored_files)) {
+                return false; // No files were restored
+            }
+            
+            // Find the main original file (largest or by naming convention)
+            $main_original = null;
+            foreach ($restored_files as $file) {
+                if (preg_match('/\.(jpg|jpeg|png|gif)$/i', $file)) {
+                    $main_original = $file;
+                    break;
+                }
+            }
+            
+            if (!$main_original) {
+                // Fallback - use first restored file
+                $main_original = $restored_files[0];
+            }
+            
+            // Generate metadata for restored original
+            $original_meta = wp_generate_attachment_metadata($att_id, $main_original);
+            if (!$original_meta) {
+                // Create basic metadata
+                $rel_path = ltrim(str_replace(trailingslashit($uploads['basedir']), '', $main_original), '/');
+                $original_meta = ['file' => $rel_path, 'sizes' => []];
+            }
+            
+            // Restore original MIME type
+            $original_mime = wp_check_filetype($main_original)['type'];
+            if (!$original_mime) {
+                $image_info = getimagesize($main_original);
+                $original_mime = $image_info['mime'] ?? 'image/jpeg';
+            }
+            
+            // Update attachment to original state
+            wp_update_post([
+                'ID' => $att_id,
+                'post_mime_type' => $original_mime,
+                'guid' => $uploads['baseurl'] . '/' . $original_meta['file']
+            ]);
+            
+            update_post_meta($att_id, '_wp_attached_file', $original_meta['file']);
+            wp_update_attachment_metadata($att_id, $original_meta);
+            
+            // Remove converted files
+            $converted_file = $current_file;
+            if (file_exists($converted_file)) {
+                @unlink($converted_file);
+            }
+            
+            // Remove converted sizes
+            if (!empty($current_meta['sizes'])) {
+                $current_dir_rel = trailingslashit(dirname($current_meta['file']));
+                foreach ($current_meta['sizes'] as $size) {
+                    if (!empty($size['file'])) {
+                        $size_path = trailingslashit($uploads['basedir']) . $current_dir_rel . $size['file'];
+                        if (file_exists($size_path)) {
+                            @unlink($size_path);
+                        }
+                    }
+                }
+            }
+            
+            // Reset status and clear metadata
+            delete_post_meta($att_id, self::STATUS_META);
+            delete_post_meta($att_id, self::BACKUP_META);
+            delete_post_meta($att_id, self::REPORT_META);
+            delete_post_meta($att_id, self::ERROR_META);
+            
+            // Keep backup directory for potential future reference
+            // Could optionally delete it: $this->rrmdir($backup_dir);
+            
+            return true;
+            
+        } catch (Exception $e) {
+            error_log('WebP Migrator Rollback Error: ' . $e->getMessage() . ' (Attachment #' . $att_id . ')');
+            return false;
+        }
     }
 
     private function rrmdir($dir) {

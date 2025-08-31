@@ -316,14 +316,7 @@ fi
 
 echo ""
 
-# Activate plugin
-echo "Activating WebP Safe Migrator plugin..."
-if podman exec webp-migrator-wordpress wp plugin activate webp-safe-migrator --allow-root 2>/dev/null; then
-    echo -e "${GREEN}✓ Plugin activated successfully!${NC}"
-else
-    echo -e "${YELLOW}! Plugin activation failed - you can activate it manually in WordPress admin${NC}"
-    echo "  Go to Plugins → Installed Plugins and activate WebP Safe Migrator"
-fi
+# Plugin activation moved to after final ownership fix below
 
 echo ""
 
@@ -402,6 +395,17 @@ podman exec webp-migrator-wordpress find /var/www/html/wp-content -type f -exec 
 echo "[FINAL-FIX] WordPress ownership fix complete"
 
 echo -e "${GREEN}* Final ownership fix applied - uploads will work correctly${NC}"
+
+echo ""
+
+# Activate plugin AFTER ownership fix to ensure proper file permissions
+echo "Activating WebP Safe Migrator plugin after ownership fix..."
+if podman exec webp-migrator-wordpress wp plugin activate webp-safe-migrator --allow-root 2>/dev/null; then
+    echo -e "${GREEN}✓ Plugin activated successfully!${NC}"
+else
+    echo -e "${YELLOW}! Plugin activation failed - you can activate it manually in WordPress admin${NC}"
+    echo "  Go to Plugins → Installed Plugins and activate WebP Safe Migrator"
+fi
 
 echo ""
 echo -e "${GREEN}=====================================${NC}"

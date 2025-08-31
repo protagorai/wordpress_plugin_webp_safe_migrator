@@ -406,6 +406,19 @@ echo [FINAL-FIX] WordPress ownership fix complete
 echo * Final ownership fix applied - uploads will work correctly
 
 echo.
+
+REM Activate plugin AFTER final ownership fix to ensure proper file permissions
+echo [FINAL-FIX] Activating WebP Safe Migrator plugin after final ownership fix...
+podman exec webp-migrator-wordpress wp plugin activate webp-safe-migrator --allow-root
+
+if errorlevel 1 (
+    echo ! Final plugin activation failed - you can activate it manually in WordPress admin
+    echo   Go to Plugins ^> Installed Plugins and activate WebP Safe Migrator
+) else (
+    echo * Plugin activated successfully after final ownership fix!
+)
+
+echo.
 echo =====================================
 echo   DEPLOYMENT COMPLETE!
 echo =====================================
