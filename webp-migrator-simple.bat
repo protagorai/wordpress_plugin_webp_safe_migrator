@@ -168,6 +168,17 @@ podman exec webp-migrator-wordpress find /var/www/html/wp-content -type f -exec 
 echo [FINAL-FIX] WordPress ownership fix complete
 
 echo * Final ownership fix applied - uploads will work correctly
+
+REM Activate plugin AFTER final comprehensive ownership fix
+echo [FINAL-FIX] Activating WebP Safe Migrator plugin after final ownership fix...
+podman exec webp-migrator-wordpress wp plugin activate webp-safe-migrator --allow-root
+
+if errorlevel 1 (
+    echo ! Final plugin activation failed - you can activate it manually
+) else (
+    echo * Plugin activated successfully after final ownership fix!
+)
+
 echo.
 
 echo Commands:
