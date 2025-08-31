@@ -240,28 +240,34 @@ wp webp-migrator stats
 
 ## 📚 Documentation
 
-### Quick Operations
-- **[🚀 Launcher Scripts Guide](documentation/LAUNCHER_SCRIPTS.md)** - **← EASIEST START** - Simple deployment scripts
+### Quick Operations  
+- **[🚀 Launcher Scripts Guide](docs/LAUNCHER_SCRIPTS.md)** - **← EASIEST START** - Simple deployment scripts
 - **[✨ Simple Setup Guide](docs/guides/SIMPLE_README.md)** - One-command setup for immediate use
-- **[📦 System Requirements](documentation/SYSTEM_REQUIREMENTS.md)** - Container engine installation and setup
-- **[🎛️ Operations Index](setup/OPERATIONS_INDEX.md)** - Complete task navigation  
-- **[🎯 Command Cheat Sheet](setup/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
+- **[📦 System Requirements](docs/SYSTEM_REQUIREMENTS.md)** - Container engine installation and setup
+- **[🎛️ Operations Index](docs/guides/OPERATIONS_INDEX.md)** - Complete task navigation  
+- **[🎯 Command Cheat Sheet](docs/guides/COMMAND_CHEAT_SHEET.md)** - All commands reference for daily use
 - **[⚙️ Configuration Examples](setup/CONFIG_EXAMPLES.md)** - Customize usernames, passwords, domains, ports
 - **[🛑 Graceful Shutdown Guide](setup/GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
-- **[🚀 Quick Start Guide](setup/QUICK_START.md)** - Complete setup walkthrough
+- **[🚀 Quick Start Guide](docs/guides/QUICK_START.md)** - Complete setup walkthrough
 
 ### Core Documentation
-- **[📖 Documentation Index](documentation/INDEX.md)** - Complete documentation navigation
-- **[📋 Requirements Analysis](documentation/REQUIREMENTS_ANALYSIS.md)** - Requirements satisfaction and traceability
-- **[🏗️ Architecture Guide](documentation/ARCHITECTURE.md)** - Technical architecture and design
-- **[📊 Implementation Review](documentation/COMPREHENSIVE_REVIEW_SUMMARY.md)** - Code review and roadmap
+- **[📖 Documentation Index](docs/INDEX.md)** - Complete documentation navigation
+- **[📋 Requirements Analysis](docs/REQUIREMENTS_ANALYSIS.md)** - Requirements satisfaction and traceability
+- **[🏗️ Architecture Guide](docs/ARCHITECTURE.md)** - Technical architecture and design
+- **[📊 Implementation Review](docs/COMPREHENSIVE_REVIEW_SUMMARY.md)** - Code review and roadmap
+
+### Multi-Plugin Documentation
+- **[🔧 Multi-Plugin Architecture](docs/technical/MULTI_PLUGIN_ARCHITECTURE_DESIGN.md)** - Complete system design
+- **[📦 Self-Contained Plugins](docs/technical/SELF_CONTAINED_PLUGIN_ARCHITECTURE.md)** - Plugin isolation and packaging
+- **[🔄 Migration Guides](docs/migration/)** - Migration and upgrade documentation
+- **[✅ Implementation Summary](docs/technical/MULTI_PLUGIN_IMPLEMENTATION_SUMMARY.md)** - Results and benefits
 
 ### Visual References
-- **[📋 System Diagrams](documentation/diagrams/)** - Architecture and flow diagrams
-  - [High-Level Architecture](documentation/diagrams/high-level.svg)
-  - [Data Flow Process](documentation/diagrams/data-flow.svg)
-  - [Database Rewriting](documentation/diagrams/db-rewrite.svg)
-  - [Batch Processing Sequence](documentation/diagrams/sequence-batch.svg)
+- **[📋 System Diagrams](docs/diagrams/)** - Architecture and flow diagrams
+  - [High-Level Architecture](docs/diagrams/high-level.svg)
+  - [Data Flow Process](docs/diagrams/data-flow.svg)
+  - [Database Rewriting](docs/diagrams/db-rewrite.svg)
+  - [Batch Processing Sequence](docs/diagrams/sequence-batch.svg)
 
 ### Development Resources
 - **[🔧 Setup Scripts](setup/)** - Local development environment

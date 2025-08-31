@@ -1,17 +1,17 @@
 /**
- * WebP Migrator Admin JavaScript
+ * Okvir Image Safe Migrator Admin JavaScript
  * Enhanced UI with real-time progress tracking and better user experience
  */
 
 (function($) {
     'use strict';
     
-    const WebPMigrator = {
+    const OkvirImageMigrator = {
         
         // Configuration
         config: {
             ajaxUrl: ajaxurl,
-            nonce: webpMigratorAdmin.nonce,
+            nonce: okvirImageMigratorAdmin.nonce,
             refreshInterval: 2000, // 2 seconds
             maxRetries: 3
         },
@@ -137,7 +137,7 @@
                 url: this.config.ajaxUrl,
                 method: 'POST',
                 data: {
-                    action: 'webp_migrator_start_background',
+                    action: 'okvir_image_migrator_start_background',
                     nonce: this.config.nonce,
                     attachment_ids: selectedAttachments,
                     options: options
@@ -170,7 +170,7 @@
                 url: this.config.ajaxUrl,
                 method: 'POST',
                 data: {
-                    action: 'webp_migrator_stop_background',
+                    action: 'okvir_image_migrator_stop_background',
                     nonce: this.config.nonce
                 },
                 success: (response) => {
@@ -197,7 +197,7 @@
                 url: this.config.ajaxUrl,
                 method: 'POST',
                 data: {
-                    action: 'webp_migrator_clear_queue',
+                    action: 'okvir_image_migrator_clear_queue',
                     nonce: this.config.nonce
                 },
                 success: (response) => {
@@ -240,7 +240,7 @@
                 url: this.config.ajaxUrl,
                 method: 'POST',
                 data: {
-                    action: 'webp_migrator_get_progress',
+                    action: 'okvir_image_migrator_get_progress',
                     nonce: this.config.nonce
                 },
                 success: (response) => {
@@ -336,7 +336,7 @@
                 url: this.config.ajaxUrl,
                 method: 'POST',
                 data: {
-                    action: 'webp_migrator_get_queue_status',
+                    action: 'okvir_image_migrator_get_queue_status',
                     nonce: this.config.nonce
                 },
                 success: (response) => {
@@ -433,13 +433,13 @@
             // Create modal if it doesn't exist
             if ($('#attachment-preview-modal').length === 0) {
                 $('body').append(`
-                    <div id="attachment-preview-modal" class="webp-modal">
-                        <div class="webp-modal-content">
-                            <div class="webp-modal-header">
+                    <div id="attachment-preview-modal" class="okvir-modal">
+                        <div class="okvir-modal-content">
+                            <div class="okvir-modal-header">
                                 <h3>Attachment Preview</h3>
-                                <button class="webp-modal-close">&times;</button>
+                                <button class="okvir-modal-close">&times;</button>
                             </div>
-                            <div class="webp-modal-body">
+                            <div class="okvir-modal-body">
                                 <div class="loading">Loading...</div>
                             </div>
                         </div>
@@ -447,7 +447,7 @@
                 `);
                 
                 // Bind close events
-                $(document).on('click', '.webp-modal-close, .webp-modal', function(e) {
+                $(document).on('click', '.okvir-modal-close, .okvir-modal', function(e) {
                     if (e.target === this) {
                         $('#attachment-preview-modal').hide();
                     }
@@ -456,7 +456,7 @@
             
             // Show modal and load content
             const $modal = $('#attachment-preview-modal');
-            const $body = $modal.find('.webp-modal-body');
+            const $body = $modal.find('.okvir-modal-body');
             
             $body.html('<div class="loading">Loading...</div>');
             $modal.show();
@@ -466,7 +466,7 @@
                 url: this.config.ajaxUrl,
                 method: 'POST',
                 data: {
-                    action: 'webp_migrator_preview_attachment',
+                    action: 'okvir_image_migrator_preview_attachment',
                     nonce: this.config.nonce,
                     attachment_id: attachmentId
                 },
@@ -506,11 +506,11 @@
             type = type || 'info';
             
             // Remove existing notices
-            $('.webp-notice').remove();
+            $('.okvir-notice').remove();
             
             // Create notice
             const $notice = $(`
-                <div class="notice notice-${type} webp-notice is-dismissible">
+                <div class="notice notice-${type} okvir-notice is-dismissible">
                     <p>${message}</p>
                     <button type="button" class="notice-dismiss">
                         <span class="screen-reader-text">Dismiss this notice.</span>
@@ -537,10 +537,10 @@
     
     // Initialize when document is ready
     $(document).ready(function() {
-        WebPMigrator.init();
+        OkvirImageMigrator.init();
     });
     
     // Export to global scope for external access
-    window.WebPMigrator = WebPMigrator;
+    window.OkvirImageMigrator = OkvirImageMigrator;
     
 })(jQuery);

@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
-# WebP Safe Migrator - Main Entry Point (Linux/macOS)
-# Unified interface for all WebP migrator operations  
+# Multi-Plugin WordPress Development Environment - Main Deployment Script (Linux/macOS)
+# Configuration-driven deployment supporting multiple plugins
 # ==============================================================================
 
 set -e
@@ -16,7 +16,7 @@ NC='\033[0m'
 
 echo ""
 echo -e "${GREEN}=====================================${NC}"
-echo -e "${GREEN}   WebP Safe Migrator v1.0${NC}"
+echo -e "${GREEN}   Multi-Plugin WordPress Dev Environment v2.0${NC}"
 echo -e "${GREEN}=====================================${NC}"
 echo ""
 
@@ -26,7 +26,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 show_help() {
-    echo -e "${BLUE}🚀 WebP Safe Migrator - WordPress Plugin Development Environment${NC}"
+    echo -e "${BLUE}🚀 Multi-Plugin WordPress Development Environment${NC}"
     echo ""
     echo -e "${CYAN}COMMANDS:${NC}"
     echo "  start       Start the development environment (equivalent to launch)"
@@ -35,44 +35,51 @@ show_help() {
     echo "  clean       Complete cleanup (removes all data)"
     echo "  status      Show current container status"
     echo "  download    Pre-download resources for faster setup"
-echo "  manage      WordPress management utilities"
-echo "  fix         Fix upload permissions (if uploads fail)"
-echo "  help        Show this help message"
+    echo "  manage      WordPress management utilities"
+    echo "  plugins     Multi-plugin management commands"
+    echo "  fix         Fix upload permissions (if uploads fail)"
+    echo "  help        Show this help message"
     echo ""
     echo -e "${CYAN}EXAMPLES:${NC}"
-    echo "  ./webp-migrator.sh start         # Start everything"
-echo "  ./webp-migrator.sh stop          # Stop containers"
-echo "  ./webp-migrator.sh clean         # Clean slate"
-echo "  ./webp-migrator.sh download      # Pre-download for speed"
-echo "  ./webp-migrator.sh manage        # WordPress management"
-echo "  ./webp-migrator.sh fix           # Fix upload permissions"
+    echo "  ./deploy.sh start         # Start multi-plugin environment"
+    echo "  ./deploy.sh stop          # Stop containers"
+    echo "  ./deploy.sh clean         # Clean slate"
+    echo "  ./deploy.sh download      # Pre-download for speed"
+    echo "  ./deploy.sh manage        # WordPress management"
+    echo "  ./deploy.sh plugins list  # List available plugins"
+    echo "  ./deploy.sh fix           # Fix upload permissions"
     echo ""
-    echo -e "${YELLOW}💡 TIP: Run './webp-migrator.sh download' first for fastest setup!${NC}"
+    echo -e "${CYAN}MULTI-PLUGIN MANAGEMENT:${NC}"
+    echo "  ./setup/multi-plugin-manager.sh list                    # List available plugins"
+    echo "  ./setup/multi-plugin-manager.sh install-all --profile development  # Deploy development plugins"
+    echo "  ./setup/multi-plugin-manager.sh status                 # Show plugin status"
     echo ""
-    echo -e "${CYAN}📚 Documentation: docs/guides/QUICK_START.md${NC}"
+    echo -e "${YELLOW}💡 TIP: Run './deploy.sh download' first for fastest setup!${NC}"
+    echo ""
+    echo -e "${CYAN}📚 Documentation: docs/INDEX.md${NC}"
 }
 
 case "$1" in
     start)
-        echo -e "${BLUE}🚀 Starting WebP Safe Migrator environment...${NC}"
+        echo -e "${BLUE}🚀 Starting Multi-Plugin WordPress environment...${NC}"
         ./webp-migrator-simple.sh "${@:2}"
         ;;
     stop)
-        echo -e "${YELLOW}⏹️ Stopping WebP Safe Migrator environment...${NC}"
+        echo -e "${YELLOW}⏹️ Stopping Multi-Plugin environment...${NC}"
         (cd bin/manage && ./stop-webp-migrator.sh)
         ;;
     restart)
-        echo -e "${CYAN}🔄 Restarting WebP Safe Migrator environment...${NC}"
+        echo -e "${CYAN}🔄 Restarting Multi-Plugin environment...${NC}"
         (cd bin/manage && ./stop-webp-migrator.sh)
         sleep 3
         (cd bin/launch && ./launch-webp-migrator.sh "${@:2}")
         ;;
     clean)
-        echo -e "${RED}🧹 Cleaning WebP Safe Migrator environment...${NC}"
+        echo -e "${RED}🧹 Cleaning Multi-Plugin environment...${NC}"
         (cd bin/manage && ./cleanup-webp-migrator.sh)
         ;;
     status)
-        echo -e "${CYAN}📊 WebP Safe Migrator status...${NC}"
+        echo -e "${CYAN}📊 Multi-Plugin environment status...${NC}"
         (cd bin/manage && ./status-webp-migrator.sh)
         ;;
     download)
@@ -85,6 +92,14 @@ case "$1" in
             (cd bin/manage && ./manage-wp.sh)
         else
             (cd bin/manage && ./manage-wp.sh "${@:2}")
+        fi
+        ;;
+    plugins)
+        echo -e "${CYAN}🔌 Multi-plugin management...${NC}"
+        if [[ $# -eq 1 ]]; then
+            ./setup/multi-plugin-manager.sh list
+        else
+            ./setup/multi-plugin-manager.sh "${@:2}"
         fi
         ;;
     fix)

@@ -58,13 +58,38 @@ development:
   upload_max_filesize: "128M"
   post_max_size: "128M"
 
-# Plugin Configuration
-webp_migrator:
-  dev_mode: true
-  log_level: "debug"
-  default_quality: 75
-  default_batch_size: 10
-  validation_mode: true
+# =============================================================================
+# PLUGIN DEPLOYMENT CONFIGURATION
+# =============================================================================
+
+# Multi-Plugin Configuration
+plugins:
+  # Which deployment profile to use (development, production, testing, custom)
+  # See bin/config/plugins.yaml for available profiles and plugin definitions
+  deployment_profile: "development"
+  
+  # Override individual plugin activation (optional)
+  # Leave empty to use profile defaults
+  activation_overrides:
+    # "okvir-image-safe-migrator": true     # Force activate
+    # "example-second-plugin": false        # Force deactivate
+  
+  # Global plugin settings
+  management:
+    auto_activate: true                      # Auto-activate plugins after deployment
+    check_requirements: true                # Verify plugin requirements
+    backup_before_deployment: true          # Backup existing plugins
+    rollback_on_error: true                # Rollback on deployment failure
+    
+  # Legacy single-plugin settings (deprecated - use plugins.yaml instead)
+  # These are kept for backward compatibility
+  legacy:
+    webp_migrator:
+      dev_mode: true
+      log_level: "debug"
+      default_quality: 75
+      default_batch_size: 10
+      validation_mode: true
 
 # =============================================================================
 # NOTES FOR DEVELOPERS
@@ -74,13 +99,28 @@ webp_migrator:
 # 1. Change the passwords above to your preferred values
 # 2. Update the ports if you have conflicts with other services
 # 3. Modify the WordPress admin email if needed
-# 4. Run launch-webp-migrator.bat to apply changes
+# 4. Configure which plugins to deploy in bin/config/plugins.yaml
+# 5. Run launch-webp-migrator.bat to apply changes
 #
 # The launch script will:
 # - Read these values automatically
 # - Create/update the WordPress admin user with your credentials
 # - Use your specified database credentials
+# - Deploy and activate plugins based on your configuration
 # - Apply all settings on every restart
+#
+# Multi-Plugin Development:
+# - Edit bin/config/plugins.yaml to add/remove plugins
+# - Use different deployment profiles (development, production, testing)
+# - Each plugin can have its own configuration
+# - Plugins are deployed based on priority and dependencies
+# - Automatic backup and rollback on errors
+#
+# Plugin Configuration:
+# - development: All plugins, debug mode, verbose logging
+# - production: Stable plugins only, minimal logging
+# - testing: Controlled testing environment
+# - custom: Your own plugin selection
 #
 # Security Note:
 # - This file contains passwords in plain text

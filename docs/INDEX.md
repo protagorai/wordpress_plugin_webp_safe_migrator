@@ -1,4 +1,4 @@
-# WebP Safe Migrator - Documentation Index
+# Multi-Plugin WordPress Development Environment - Documentation Index
 
 ## Table of Contents
 
@@ -12,7 +12,13 @@
 
 ### 🏗️ Architecture & Design
 - **[Architecture Overview](ARCHITECTURE.md)** - System architecture, components, and data persistence
+- **[Multi-Plugin Architecture](../docs/technical/MULTI_PLUGIN_ARCHITECTURE_DESIGN.md)** - Multi-plugin system design and implementation
 - **[Comprehensive Review](COMPREHENSIVE_REVIEW_SUMMARY.md)** - Complete code review, implementation analysis, and enhancement roadmap
+
+### 🔄 Migration & Updates
+- **[Entry Points Migration Guide](../docs/migration/ENTRY_POINTS_MIGRATION_GUIDE.md)** - Migration from old to new deployment entry points
+- **[Deployment Updates Summary](../docs/migration/DEPLOYMENT_ENTRY_POINTS_UPDATE_SUMMARY.md)** - Complete summary of deployment changes
+- **[Multi-Plugin Implementation Summary](../docs/technical/MULTI_PLUGIN_IMPLEMENTATION_SUMMARY.md)** - Implementation results and benefits
 
 ### 📊 Visual Documentation
 - **[System Diagrams](diagrams/)** - Visual architecture and flow diagrams
@@ -50,16 +56,20 @@
   - [Unit Tests](../tests/unit/) - Individual component testing
   - [Test Helpers](../tests/helpers/) - Testing utilities and mock data
 
-### 📁 Implementation Files
-- **[Source Code](../src/)** - Plugin implementation
-  - [Main Plugin](../src/webp-safe-migrator.php) - Production-ready multi-format image converter
-- **[Enhanced Classes](../includes/)** - Advanced feature implementations
-  - [Converter Class](../includes/class-webp-migrator-converter.php) - Enhanced image conversion
-  - [Queue System](../includes/class-webp-migrator-queue.php) - Background processing
-  - [Logger](../includes/class-webp-migrator-logger.php) - Comprehensive logging
-- **[Admin Interface](../admin/)** - Modern admin UI components
-  - [JavaScript](../admin/js/admin.js) - Enhanced admin functionality
-  - [Styles](../admin/css/admin.css) - Modern CSS styling
+### 📁 Multi-Plugin Implementation
+- **[Multi-Plugin Architecture](../docs/technical/MULTI_PLUGIN_ARCHITECTURE_DESIGN.md)** - Complete architectural design
+- **[Source Plugins](../src/)** - Self-contained plugin implementations
+  - **[Okvir Image Safe Migrator](../src/okvir-image-safe-migrator/)** - Primary image conversion plugin
+    - [Main Plugin File](../src/okvir-image-safe-migrator/okvir-image-safe-migrator.php) - Production-ready multi-format converter
+    - [Converter Class](../src/okvir-image-safe-migrator/includes/class-image-migrator-converter.php) - Enhanced image conversion
+    - [Queue System](../src/okvir-image-safe-migrator/includes/class-image-migrator-queue.php) - Background processing
+    - [Logger](../src/okvir-image-safe-migrator/includes/class-image-migrator-logger.php) - Comprehensive logging
+    - [Admin Interface](../src/okvir-image-safe-migrator/admin/) - Modern admin UI components
+  - **[Example Second Plugin](../src/example-second-plugin/)** - Template for additional plugins
+- **[Multi-Plugin Management](../setup/)** - Plugin deployment and management tools
+  - [Multi-Plugin Manager (Windows)](../setup/multi-plugin-manager.ps1) - PowerShell plugin management
+  - [Multi-Plugin Manager (Linux/macOS)](../setup/multi-plugin-manager.sh) - Bash plugin management
+  - [Configuration System](../bin/config/plugins.yaml) - Plugin deployment configuration
 
 ## Navigation Guide
 

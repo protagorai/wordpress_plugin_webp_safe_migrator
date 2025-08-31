@@ -1,0 +1,320 @@
+# Multi-Plugin Configuration for WordPress Development Environment
+# This file defines which plugins are available for development and deployment
+
+# =============================================================================
+# AVAILABLE PLUGINS
+# =============================================================================
+# All plugins that are available for development and deployment
+plugins:
+  available:
+    - slug: "okvir-image-safe-migrator"
+      path: "okvir-image-safe-migrator"           # Relative to src/ directory
+      name: "Okvir Image Safe Migrator"
+      description: "Convert images to modern formats (WebP, AVIF, JXL) with quality control and validation"
+      main_file: "okvir-image-safe-migrator.php"
+      version: "1.0.0"
+      author: "Okvir Platforma"
+      requires_php: "7.4"
+      requires_wordpress: "5.8"
+      category: "media"
+      priority: 1                                 # Lower numbers deploy first
+      
+    - slug: "example-second-plugin"
+      path: "example-second-plugin"
+      name: "Example Second Plugin"
+      description: "Demonstration plugin for multi-plugin development capabilities"
+      main_file: "example-second-plugin.php"
+      version: "0.1.0"
+      author: "Okvir Platforma"
+      requires_php: "7.4"
+      requires_wordpress: "5.8"
+      category: "utilities"
+      priority: 2
+
+# =============================================================================
+# DEPLOYMENT PROFILES
+# =============================================================================
+# Different deployment configurations for various environments
+
+deployment:
+  # Development environment - all plugins for testing
+  development:
+    environment_name: "Development"
+    description: "Full development environment with all plugins"
+    plugins:
+      - slug: "okvir-image-safe-migrator"
+        activate: true
+        config_override:
+          dev_mode: true
+          log_level: "debug"
+          
+      - slug: "example-second-plugin"
+        activate: false                          # Available but not auto-activated
+        config_override:
+          log_level: "debug"
+
+  # Production environment - only stable plugins
+  production:
+    environment_name: "Production"
+    description: "Production-ready plugins only"
+    plugins:
+      - slug: "okvir-image-safe-migrator"
+        activate: true
+        config_override:
+          dev_mode: false
+          log_level: "error"
+
+  # Testing environment - specific plugins for testing
+  testing:
+    environment_name: "Testing"
+    description: "Controlled testing environment"
+    plugins:
+      - slug: "okvir-image-safe-migrator"
+        activate: true
+        config_override:
+          dev_mode: true
+          log_level: "info"
+          validation: true                       # Force validation mode
+          
+      - slug: "example-second-plugin"
+        activate: true
+        config_override:
+          feature_enabled: true
+          log_level: "info"
+
+  # Custom profile example
+  custom:
+    environment_name: "Custom Selection"
+    description: "User-defined plugin selection"
+    plugins:
+      - slug: "okvir-image-safe-migrator"
+        activate: true
+        
+# Default deployment profile (used when none specified)
+default_profile: "development"
+
+# =============================================================================
+# GLOBAL PLUGIN SETTINGS
+# =============================================================================
+# Settings that apply to all plugins
+
+global:
+  # WordPress configuration
+  wordpress:
+    auto_update_plugins: false
+    auto_update_themes: false
+    
+  # Plugin management
+  plugin_management:
+    check_requirements: true                    # Verify PHP/WP version requirements
+    dependency_resolution: true                # Handle plugin dependencies
+    parallel_activation: false                 # Activate plugins in sequence
+    rollback_on_error: true                   # Rollback if activation fails
+    
+  # Development settings
+  development:
+    enable_debug_logging: true
+    preserve_plugin_data: true                 # Keep plugin data during redeployment
+    create_symlinks: false                     # Copy files instead of symlinking
+    
+  # Backup settings
+  backup:
+    backup_before_deployment: true
+    backup_retention_days: 30
+    backup_location: "backups"                # Relative to project root
+
+# =============================================================================
+# PLUGIN-SPECIFIC CONFIGURATIONS
+# =============================================================================
+# Default configurations for each plugin (can be overridden in deployment profiles)
+
+plugin_configs:
+  okvir_image_safe_migrator:
+    # Default settings for the image migrator
+    target_format: "webp"
+    quality: 75
+    batch_size: 10
+    validation: true
+    dev_mode: true
+    log_level: "info"
+    
+    # Environment-specific overrides
+    environments:
+      production:
+        dev_mode: false
+        log_level: "error"
+        batch_size: 5                          # Smaller batches in production
+      testing:
+        validation: true                       # Always validate in testing
+        log_level: "debug"
+
+  example_second_plugin:
+    # Default settings for the example plugin
+    feature_enabled: true
+    log_level: "info"
+    notification_email: "admin@example.com"
+    
+    # Environment-specific overrides
+    environments:
+      production:
+        log_level: "error"
+      development:
+        log_level: "debug"
+
+# =============================================================================
+# DEPLOYMENT HOOKS
+# =============================================================================
+# Scripts or commands to run during deployment phases
+
+hooks:
+  # Before any plugins are processed
+  pre_deployment:
+    - command: "wp cache flush"
+      description: "Clear WordPress cache"
+      continue_on_error: true
+      
+  # After all plugins are deployed but before activation
+  post_deployment:
+    - command: "wp rewrite flush"
+      description: "Flush rewrite rules"
+      continue_on_error: true
+      
+  # After all plugins are activated
+  post_activation:
+    - command: "wp cron event run --due-now"
+      description: "Run pending cron jobs"
+      continue_on_error: true
+    - script: "fix-uploads-ownership.sh"
+      description: "Fix file permissions"
+      run_once: true                           # Only run once per deployment, not per plugin
+      
+  # If deployment fails
+  on_failure:
+    - command: "wp plugin deactivate --all"
+      description: "Deactivate all plugins on failure"
+      continue_on_error: true
+
+# =============================================================================
+# VALIDATION RULES
+# =============================================================================
+# Rules for validating plugin configurations and deployments
+
+validation:
+  # Plugin validation rules
+  plugins:
+    require_main_file: true                    # Main plugin file must exist
+    check_php_syntax: true                     # Validate PHP syntax
+    check_wordpress_headers: true             # Validate plugin headers
+    check_version_consistency: true           # Version in config matches plugin file
+    
+  # Deployment validation
+  deployment:
+    check_disk_space: true                     # Ensure enough disk space
+    check_php_requirements: true              # Verify PHP version requirements
+    check_wordpress_requirements: true        # Verify WordPress version requirements
+    test_plugin_loading: true                 # Test that plugins can be loaded
+    
+  # Security validation
+  security:
+    scan_for_vulnerabilities: false           # Enable for production deployments
+    check_file_permissions: true
+    validate_user_capabilities: true
+
+# =============================================================================
+# LOGGING AND MONITORING
+# =============================================================================
+# Configuration for deployment logging and monitoring
+
+logging:
+  # Log levels: debug, info, warning, error, critical
+  level: "info"
+  
+  # Log destinations
+  destinations:
+    - type: "file"
+      path: "logs/multi-plugin-deployment.log"
+      max_size: "10MB"
+      rotate: true
+      
+    - type: "database"
+      table: "multi_plugin_logs"
+      max_entries: 1000
+      
+  # What to log
+  events:
+    plugin_discovery: true
+    validation_results: true
+    deployment_progress: true
+    activation_results: true
+    hook_execution: true
+    errors_and_warnings: true
+
+# =============================================================================
+# ADVANCED SETTINGS
+# =============================================================================
+# Advanced configuration options
+
+advanced:
+  # Concurrency settings
+  concurrency:
+    max_parallel_operations: 1                # Process plugins sequentially by default
+    timeout_seconds: 300                      # 5 minutes max per operation
+    
+  # Memory and resource limits
+  resources:
+    memory_limit_mb: 512
+    execution_time_limit: 300
+    
+  # Plugin dependency management
+  dependencies:
+    auto_resolve: true                        # Automatically handle dependencies
+    dependency_check: true                    # Verify dependencies before activation
+    
+  # Development features
+  development_features:
+    hot_reload: false                         # Reload plugins on file change (experimental)
+    debug_mode: true                          # Enable additional debugging features
+    profiling: false                          # Profile plugin performance
+    
+# =============================================================================
+# EXAMPLES AND TEMPLATES
+# =============================================================================
+# Example configurations for different scenarios
+
+examples:
+  # Single plugin deployment
+  single_plugin_example:
+    description: "Deploy only the image migrator plugin"
+    plugins:
+      - slug: "okvir-image-safe-migrator"
+        activate: true
+        
+  # Development with external plugins
+  external_plugins_example:
+    description: "Include plugins from WordPress repository"
+    plugins:
+      - slug: "okvir-image-safe-migrator"
+        source: "local"
+        activate: true
+        
+      - slug: "query-monitor"
+        source: "wordpress_org"
+        activate: true
+        
+      - slug: "debug-bar"
+        source: "wordpress_org"
+        activate: false
+
+# =============================================================================
+# METADATA
+# =============================================================================
+# Configuration file metadata
+
+metadata:
+  version: "1.0.0"
+  created: "2025-01-27"
+  last_updated: "2025-01-27"
+  compatible_with:
+    - "webp-migrator-system: 2.0+"
+  description: "Multi-plugin configuration for WordPress development environment"
+  documentation: "docs/technical/MULTI_PLUGIN_ARCHITECTURE_DESIGN.md"

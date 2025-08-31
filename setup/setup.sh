@@ -282,7 +282,7 @@ main() {
     esac
     
     echo ""
-    echo -e "${YELLOW}📚 Documentation: ./documentation/INDEX.md${NC}"
+    echo -e "${YELLOW}📚 Documentation: ./docs/INDEX.md${NC}"
     echo -e "${YELLOW}🧪 Run Tests: phpunit tests/${NC}"
     echo ""
 }

@@ -171,5 +171,5 @@ The new setup system handles everything automatically. Just run the script and s
 - **[🎛️ Operations Index](OPERATIONS_INDEX.md)** - Quick navigation to all common tasks
 - **[🎯 Command Cheat Sheet](COMMAND_CHEAT_SHEET.md)** - Complete command reference
 - **[🛑 Graceful Shutdown Guide](GRACEFUL_SHUTDOWN.md)** - Proper shutdown procedures
-- **[📖 Full Documentation](../documentation/INDEX.md)** - Complete technical documentation
+- **[📖 Full Documentation](../docs/INDEX.md)** - Complete technical documentation
 

@@ -1,8 +1,8 @@
 @echo off
 setlocal enabledelayedexpansion
 REM ==============================================================================
-REM WebP Safe Migrator - Fixed Main Script (Based on Working Simple Version)
-REM All the features, but using the reliable patterns from simple script
+REM Multi-Plugin WordPress Development Environment - Main Deployment Script
+REM Configuration-driven deployment supporting multiple plugins
 REM ==============================================================================
 
 if "%1"=="" goto show_help
@@ -15,6 +15,7 @@ if /i "%1"=="status" goto status
 if /i "%1"=="clean" goto clean
 if /i "%1"=="download" goto download
 if /i "%1"=="manage" goto manage
+if /i "%1"=="plugins" goto plugins
 if /i "%1"=="help" goto show_help
 
 echo ❌ Unknown command: %1
@@ -23,23 +24,10 @@ goto show_help
 :show_help
 echo.
 echo =====================================
-echo    WebP Safe Migrator v1.0
+echo    Multi-Plugin WordPress Dev Environment v2.0
 echo =====================================
 echo.
-
-REM Check system requirements
-podman --version >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: Podman not found. This tool requires Podman.
-    echo.
-    echo Install Podman from: https://podman.io/getting-started/installation
-    echo Alternative: Use Docker (replace 'podman' with 'docker' in scripts)
-    echo.
-    pause
-    exit /b 1
-)
-echo * Podman available
-echo 🚀 WebP Safe Migrator - WordPress Plugin Development Environment
+echo 🚀 Multi-Plugin WordPress Development Environment
 echo.
 echo COMMANDS:
 echo   start       Start the development environment
@@ -49,15 +37,21 @@ echo   clean       Complete cleanup (removes all data)
 echo   status      Show current container status
 echo   download    Pre-download resources for faster setup
 echo   manage      WordPress management utilities
+echo   plugins     Multi-plugin management commands
 echo   fix         Fix upload permissions (if uploads fail)
 echo   help        Show this help message
 echo.
 echo EXAMPLES:
-echo   webp-migrator start         # Start everything
-echo   webp-migrator stop          # Stop containers
-echo   webp-migrator clean         # Clean slate
-echo   webp-migrator download      # Pre-download for speed
-echo   webp-migrator fix           # Fix upload permissions
+echo   deploy start         # Start multi-plugin environment
+echo   deploy stop          # Stop containers
+echo   deploy clean         # Clean slate
+echo   deploy download      # Pre-download for speed
+echo   deploy plugins list  # List available plugins
+echo   deploy fix           # Fix upload permissions
+echo.
+echo MULTI-PLUGIN MANAGEMENT:
+echo   setup\multi-plugin-manager.ps1 list        # List available plugins
+echo   setup\multi-plugin-manager.ps1 status      # Show plugin deployment status
 echo.
 goto end
 
@@ -134,7 +128,7 @@ podman run -d --name webp-migrator-wordpress --network webp-migrator-net ^
     -e WORDPRESS_DB_PASSWORD=%DB_WP_PASS% ^
     -e WORDPRESS_DB_NAME=%DB_NAME% ^
     -e WORDPRESS_DEBUG=1 ^
-    -v "%CD%\src:/var/www/html/wp-content/plugins/webp-safe-migrator" ^
+    -v "%CD%\src:/var/www/html/wp-content/plugins/src-plugins" ^
     wordpress:latest >nul
 
 if errorlevel 1 (
@@ -198,19 +192,43 @@ if errorlevel 1 (
     podman exec webp-migrator-wordpress find /var/www/html/wp-content -type f -exec chmod 644 {} \; 2>nul
     echo * WordPress ownership fixed AFTER installation - uploads will work correctly
     
-    REM Activate plugin
-    echo Activating WebP Safe Migrator plugin...
-    podman exec webp-migrator-wordpress wp plugin activate webp-safe-migrator --allow-root 2>nul
-    if not errorlevel 1 (
-        echo * Plugin activated successfully!
+    REM Deploy plugins using multi-plugin manager with configuration
+    echo Deploying plugins using multi-plugin configuration...
+    
+    REM Use multi-plugin manager to deploy based on configuration
+    echo * Running multi-plugin deployment...
+    powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "deploy"
+    
+    if errorlevel 1 (
+        echo ! Multi-plugin deployment failed, falling back to manual copy...
+        
+        REM Fallback: Copy plugins manually
+        for /d %%i in (src\*) do (
+            if exist "%%i\*.php" (
+                echo   - Copying plugin: %%~ni
+                podman cp "%%i" webp-migrator-wordpress:/var/www/html/wp-content/plugins/ 2>nul
+            )
+        )
+        
+        REM Fix permissions for all plugins
+        podman exec webp-migrator-wordpress chown -R www-data:www-data /var/www/html/wp-content/plugins/ 2>nul
+        
+        REM Activate primary plugin
+        echo * Activating Okvir Image Safe Migrator...
+        podman exec webp-migrator-wordpress wp plugin activate okvir-image-safe-migrator --allow-root 2>nul
+        if not errorlevel 1 (
+            echo * Primary plugin activated successfully!
+        ) else (
+            echo ! Plugin activation failed - activate manually in WordPress admin
+        )
     ) else (
-        echo ! Plugin activation failed - activate manually in WordPress admin
+        echo * Multi-plugin deployment completed successfully!
     )
 )
 
 echo.
 echo =====================================
-echo     SUCCESS - WebP Migrator Ready!
+echo     SUCCESS - Multi-Plugin Environment Ready!
 echo =====================================
 echo.
 echo  WordPress: %WP_SITE_URL%/wp-admin
@@ -218,7 +236,8 @@ echo  Username:  %WP_ADMIN_USER%
 echo  Password:  %WP_ADMIN_PASS%
 echo.
 echo  phpMyAdmin: http://localhost:%PMA_PORT%
-echo  Plugin: Media → WebP Migrator
+echo  Primary Plugin: Media → Image Migrator
+echo  Plugin Management: setup\multi-plugin-manager.ps1
 echo.
 start %WP_SITE_URL%/wp-admin
 echo.
@@ -243,12 +262,18 @@ echo * Final ownership fix applied - uploads will work correctly
 echo.
 
 echo Commands:
-echo   webp-migrator.bat start    # Start/restart
-echo   webp-migrator.bat stop     # Stop containers
-echo   webp-migrator.bat clean    # Complete cleanup
-echo   webp-migrator.bat status   # Show status
-echo   webp-migrator.bat download # Pre-download resources
-echo   webp-migrator.bat fix      # Fix upload permissions manually
+echo   deploy.bat start           # Start/restart multi-plugin environment
+echo   deploy.bat stop            # Stop containers
+echo   deploy.bat clean           # Complete cleanup
+echo   deploy.bat status          # Show status
+echo   deploy.bat download        # Pre-download resources
+echo   deploy.bat plugins list    # List available plugins
+echo   deploy.bat fix             # Fix upload permissions manually
+echo.
+echo Multi-Plugin Management:
+echo   setup\multi-plugin-manager.ps1 list                    # List available plugins
+echo   setup\multi-plugin-manager.ps1 install-all --profile development  # Deploy development plugins
+echo   setup\multi-plugin-manager.ps1 status                 # Show plugin status
 echo.
 echo Press any key to close...
 pause >nul
@@ -277,6 +302,15 @@ goto end
 
 :manage
 call bin\manage\manage-wp.bat %2 %3 %4 %5
+goto end
+
+:plugins
+echo 🔌 Multi-plugin management...
+if "%2"=="" (
+    powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "list"
+) else (
+    powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "%2"
+)
 goto end
 
 :fix

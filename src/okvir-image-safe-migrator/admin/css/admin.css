@@ -1,5 +1,5 @@
 /**
- * WebP Migrator Admin Styles
+ * Okvir Image Safe Migrator Admin Styles
  * Enhanced UI styling for better user experience
  */
 
@@ -7,16 +7,16 @@
    General Styles
    ========================================================================== */
 
-.webp-migrator-admin {
+.okvir-image-migrator-admin {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-.webp-migrator-admin .form-table th {
+.okvir-image-migrator-admin .form-table th {
     width: 180px;
     font-weight: 600;
 }
 
-.webp-migrator-admin .form-table td {
+.okvir-image-migrator-admin .form-table td {
     padding: 15px 10px;
 }
 
@@ -343,7 +343,7 @@
    Modal Styles
    ========================================================================== */
 
-.webp-modal {
+.okvir-modal {
     display: none;
     position: fixed;
     z-index: 100000;
@@ -355,7 +355,7 @@
     backdrop-filter: blur(2px);
 }
 
-.webp-modal-content {
+.okvir-modal-content {
     background-color: #fff;
     margin: 5% auto;
     padding: 0;
@@ -379,7 +379,7 @@
     }
 }
 
-.webp-modal-header {
+.okvir-modal-header {
     padding: 20px 30px;
     background: #f9f9f9;
     border-bottom: 1px solid #ddd;
@@ -388,12 +388,12 @@
     align-items: center;
 }
 
-.webp-modal-header h3 {
+.okvir-modal-header h3 {
     margin: 0;
     color: #23282d;
 }
 
-.webp-modal-close {
+.okvir-modal-close {
     background: none;
     border: none;
     font-size: 24px;
@@ -409,12 +409,12 @@
     transition: all 0.2s ease;
 }
 
-.webp-modal-close:hover {
+.okvir-modal-close:hover {
     background: #f0f0f0;
     color: #000;
 }
 
-.webp-modal-body {
+.okvir-modal-body {
     padding: 30px;
     max-height: 60vh;
     overflow-y: auto;
@@ -442,7 +442,7 @@
    Notices
    ========================================================================== */
 
-.webp-notice {
+.okvir-notice {
     margin: 20px 0;
     animation: noticeSlideIn 0.3s ease;
 }
@@ -489,14 +489,14 @@
         max-width: 200px;
     }
     
-    .webp-modal-content {
+    .okvir-modal-content {
         width: 95%;
         margin: 2% auto;
         max-height: 95vh;
     }
     
-    .webp-modal-header,
-    .webp-modal-body {
+    .okvir-modal-header,
+    .okvir-modal-body {
         padding: 20px;
     }
 }
@@ -566,30 +566,30 @@
    ========================================================================== */
 
 @media (prefers-color-scheme: dark) {
-    .webp-migrator-admin .progress-wrapper,
-    .webp-migrator-admin .attachment-list,
-    .webp-migrator-admin .conversion-options,
-    .webp-migrator-admin .stat-card {
+    .okvir-image-migrator-admin .progress-wrapper,
+    .okvir-image-migrator-admin .attachment-list,
+    .okvir-image-migrator-admin .conversion-options,
+    .okvir-image-migrator-admin .stat-card {
         background: #1d2327;
         border-color: #3c434a;
         color: #f0f0f1;
     }
     
-    .webp-migrator-admin .attachment-list-header,
-    .webp-migrator-admin .size-options {
+    .okvir-image-migrator-admin .attachment-list-header,
+    .okvir-image-migrator-admin .size-options {
         background: #2c3338;
     }
     
-    .webp-migrator-admin .attachment-item:hover {
+    .okvir-image-migrator-admin .attachment-item:hover {
         background-color: #2c3338;
     }
     
-    .webp-migrator-admin .webp-modal-content {
+    .okvir-image-migrator-admin .okvir-modal-content {
         background-color: #1d2327;
         color: #f0f0f1;
     }
     
-    .webp-migrator-admin .webp-modal-header {
+    .okvir-image-migrator-admin .okvir-modal-header {
         background: #2c3338;
         border-color: #3c434a;
     }
