@@ -16,9 +16,11 @@ if (Test-Path "src") {
             $hasIncludes = Test-Path (Join-Path $dir.FullName "includes")
             
             if ($hasAdmin -and $hasIncludes) {
-                Write-Host "    Self-contained: Yes (complex plugin)" -ForegroundColor Green
+                Write-Host "    Self-contained: Yes (complex plugin with separate folders)" -ForegroundColor Green
             } elseif ($phpFiles.Count -eq 1) {
-                Write-Host "    Self-contained: Yes (simple plugin)" -ForegroundColor Green
+                Write-Host "    Self-contained: Yes (simple single-file plugin)" -ForegroundColor Green
+            } elseif ($phpFiles.Count -eq 2 -and (Test-Path (Join-Path $dir.FullName "uninstall.php"))) {
+                Write-Host "    Self-contained: Yes (consolidated plugin with uninstall)" -ForegroundColor Green
             } else {
                 Write-Host "    Self-contained: Partial" -ForegroundColor Yellow
             }

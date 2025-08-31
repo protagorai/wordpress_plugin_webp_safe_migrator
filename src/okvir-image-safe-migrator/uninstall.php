@@ -21,6 +21,7 @@ function okvir_image_migrator_cleanup_all_data() {
     delete_option('okvir_image_safe_migrator_settings');
     delete_option('okvir_image_migrator_queue');
     delete_option('okvir_image_migrator_progress');
+    delete_option('okvir_image_migrator_statistics');     // Statistics tracking data
     
     // Remove all plugin-related postmeta
     $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE '_okvir_image_%'");
@@ -37,6 +38,17 @@ function okvir_image_migrator_cleanup_all_data() {
     $log_dir = trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-logs';
     if (is_dir($log_dir)) {
         okvir_image_migrator_remove_directory($log_dir);
+    }
+    
+    // Remove individual log files that might exist in uploads root
+    $error_log_file = trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-conversion-errors.json';
+    if (file_exists($error_log_file)) {
+        @unlink($error_log_file);
+    }
+    
+    $dimension_log_file = trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-dimension-inconsistencies.json';
+    if (file_exists($dimension_log_file)) {
+        @unlink($dimension_log_file);
     }
     
     // Clear any scheduled cron jobs
