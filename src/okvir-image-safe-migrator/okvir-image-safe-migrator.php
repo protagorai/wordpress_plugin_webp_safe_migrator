@@ -396,7 +396,7 @@ class Okvir_Image_Safe_Migrator {
 
         // Reset all statistics  
         if (isset($_POST['reset_statistics']) && wp_verify_nonce($_POST[self::NONCE] ?? '', 'reset_statistics')) {
-            delete_option('webp_migrator_statistics');
+            delete_option('okvir_image_migrator_statistics');
             add_settings_error('okvir_image_safe_migrator', 'stats_reset', "All conversion statistics have been reset.", 'updated');
         }
 
@@ -2593,7 +2593,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
      * Update conversion statistics for tracking and analytics
      */
     private function update_conversion_statistics($att_id, $action) {
-        $stats = get_option('webp_migrator_statistics', [
+        $stats = get_option('okvir_image_migrator_statistics', [
             'total_conversions' => 0,
             'total_commits' => 0,
             'total_rollbacks' => 0,
@@ -2644,7 +2644,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             $stats['last_conversion'] = $current_time;
         }
         
-        update_option('webp_migrator_statistics', $stats);
+        update_option('okvir_image_migrator_statistics', $stats);
     }
     
     /**
@@ -2654,7 +2654,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         global $wpdb;
         
         // Get basic statistics
-        $stats = get_option('webp_migrator_statistics', [
+        $stats = get_option('okvir_image_migrator_statistics', [
             'total_conversions' => 0,
             'total_commits' => 0,
             'total_rollbacks' => 0,
