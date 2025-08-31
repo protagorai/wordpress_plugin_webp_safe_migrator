@@ -428,7 +428,7 @@ class Okvir_Image_Safe_Migrator {
         
         // Determine active tab
         $active_tab = $_GET['tab'] ?? 'settings';
-        $valid_tabs = ['settings', 'batch', 'reports', 'errors', 'reprocess', 'dimensions', 'maintenance'];
+        $valid_tabs = ['settings', 'batch', 'reports', 'errors', 'reprocess', 'dimensions', 'maintenance', 'debug_logs'];
         if (!in_array($active_tab, $valid_tabs)) {
             $active_tab = 'settings';
         }
@@ -448,6 +448,7 @@ class Okvir_Image_Safe_Migrator {
                 <a href="?page=okvir-image-safe-migrator&tab=dimensions" class="nav-tab <?php echo $active_tab == 'dimensions' ? 'nav-tab-active' : ''; ?>">Dimension Issues</a>
                 <?php endif; ?>
                 <a href="?page=okvir-image-safe-migrator&tab=maintenance" class="nav-tab <?php echo $active_tab == 'maintenance' ? 'nav-tab-active' : ''; ?>">Maintenance</a>
+                <a href="?page=okvir-image-safe-migrator&tab=debug_logs" class="nav-tab <?php echo $active_tab == 'debug_logs' ? 'nav-tab-active' : ''; ?>">Debug Logs</a>
             </h2>
             
             <!-- Tab Content -->
@@ -474,6 +475,9 @@ class Okvir_Image_Safe_Migrator {
                         break;
                     case 'maintenance':
                         $this->render_maintenance_tab();
+                        break;
+                    case 'debug_logs':
+                        $this->render_debug_logs_tab();
                         break;
                     default:
                         $this->render_settings_tab();
@@ -1654,8 +1658,27 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                             $pre_resize_backup = $new_path . '.pre-resize.' . uniqid();
                             $backup_created = @copy($new_path, $pre_resize_backup);
                             
+                            // Log detailed resize attempt
+                            $this->log_resize_debug($att_id, "Starting resize operation", [
+                                'original_dimensions' => [$current_width, $current_height],
+                                'target_dimensions' => [$new_width, $new_height],
+                                'bounding_box_mode' => $box_mode,
+                                'file_path' => $new_path,
+                                'file_exists' => file_exists($new_path),
+                                'file_size' => file_exists($new_path) ? filesize($new_path) : 0,
+                                'backup_created' => $backup_created
+                            ]);
+                            
                             $resized = $this->resize_image($new_path, $new_width, $new_height);
                             if (!$resized) {
+                                $this->log_resize_debug($att_id, "Resize operation FAILED", [
+                                    'original_dimensions' => [$current_width, $current_height],
+                                    'target_dimensions' => [$new_width, $new_height],
+                                    'bounding_box_mode' => $box_mode,
+                                    'file_exists_after_resize' => file_exists($new_path),
+                                    'file_size_after_resize' => file_exists($new_path) ? filesize($new_path) : 0
+                                ]);
+                                
                                 $this->log_conversion_error($att_id, "Failed to resize image to {$new_width}x{$new_height}", 'bounding_box_resize', [
                                     'original_dimensions' => [$current_width, $current_height],
                                     'target_dimensions' => [$new_width, $new_height],
@@ -1665,11 +1688,30 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                                 
                                 // ROLLBACK: Restore pre-resize file if backup exists
                                 if ($backup_created && file_exists($pre_resize_backup)) {
-                                    if (@copy($pre_resize_backup, $new_path)) {
+                                    $rollback_success = @copy($pre_resize_backup, $new_path);
+                                    $this->log_resize_debug($att_id, "Rollback attempted", [
+                                        'backup_exists' => file_exists($pre_resize_backup),
+                                        'rollback_success' => $rollback_success,
+                                        'file_restored' => file_exists($new_path),
+                                        'restored_file_size' => file_exists($new_path) ? filesize($new_path) : 0
+                                    ]);
+                                    
+                                    if ($rollback_success) {
                                         error_log("WebP Migrator: Restored pre-resize backup for attachment #{$att_id}");
+                                    } else {
+                                        error_log("WebP Migrator: CRITICAL - Failed to restore backup for attachment #{$att_id}");
+                                        // This is a critical failure - mark the attachment for manual review
+                                        update_post_meta($att_id, self::STATUS_META, 'critical_failure');
+                                        $this->log_resize_debug($att_id, "CRITICAL FAILURE - Unable to restore backup", []);
                                     }
                                 }
                             } else {
+                                $this->log_resize_debug($att_id, "Resize operation SUCCESS", [
+                                    'target_dimensions' => [$new_width, $new_height],
+                                    'file_exists_after_resize' => file_exists($new_path),
+                                    'file_size_after_resize' => file_exists($new_path) ? filesize($new_path) : 0
+                                ]);
+                                
                                 // Verify the resize was successful by checking dimensions
                                 $verify_size = @getimagesize($new_path);
                                 if (!$verify_size || abs($verify_size[0] - $new_width) > 1 || abs($verify_size[1] - $new_height) > 1) {
@@ -1710,19 +1752,84 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             }
         }
 
-        // Generate fresh metadata/sizes from converted original
+        // Generate fresh metadata/sizes from converted original with enhanced safety
         try {
-        $new_meta = wp_generate_attachment_metadata($att_id, $new_path);
-        if (!$new_meta || empty($new_meta['file'])) {
+            // SAFETY CHECK: Verify file still exists and is valid before metadata generation
+            if (!file_exists($new_path)) {
+                $this->log_resize_debug($att_id, "CRITICAL - File missing before metadata generation", [
+                    'expected_path' => $new_path
+                ]);
+                $this->log_conversion_error($att_id, 'Converted file missing before metadata generation', 'metadata_generation', [
+                    'converted_path' => $new_path
+                ]);
+                update_post_meta($att_id, self::STATUS_META, 'file_missing');
+                return false;
+            }
+            
+            $file_size_before = filesize($new_path);
+            $image_info_before = @getimagesize($new_path);
+            
+            $this->log_resize_debug($att_id, "Starting metadata generation", [
+                'file_path' => $new_path,
+                'file_size' => $file_size_before,
+                'image_dimensions' => $image_info_before ? [$image_info_before[0], $image_info_before[1]] : null,
+                'mime_type' => $image_info_before['mime'] ?? null
+            ]);
+            
+            // Generate metadata with error recovery
+            $new_meta = wp_generate_attachment_metadata($att_id, $new_path);
+            
+            // Verify metadata generation didn't corrupt the file
+            $file_exists_after = file_exists($new_path);
+            $file_size_after = $file_exists_after ? filesize($new_path) : 0;
+            
+            $this->log_resize_debug($att_id, "Metadata generation completed", [
+                'metadata_generated' => !empty($new_meta),
+                'file_exists_after' => $file_exists_after,
+                'file_size_before' => $file_size_before,
+                'file_size_after' => $file_size_after,
+                'file_size_changed' => $file_size_before !== $file_size_after,
+                'metadata' => $new_meta
+            ]);
+            
+            if (!$new_meta || empty($new_meta['file'])) {
+                $this->log_resize_debug($att_id, "Metadata generation FAILED", [
+                    'metadata_result' => $new_meta,
+                    'file_still_exists' => file_exists($new_path)
+                ]);
+                
                 $this->log_conversion_error($att_id, 'Failed to generate attachment metadata for converted image', 'metadata_generation', [
                     'converted_path' => $new_path,
-                    'generated_meta' => $new_meta
+                    'generated_meta' => $new_meta,
+                    'file_exists_after_meta_gen' => file_exists($new_path)
                 ]);
                 update_post_meta($att_id, self::STATUS_META, 'metadata_failed');
                 // Keep the original file and return false - this is a critical failure
                 return false;
             }
+            
+            // Verify file wasn't corrupted during metadata generation
+            if (!$file_exists_after) {
+                $this->log_resize_debug($att_id, "CRITICAL - File disappeared during metadata generation", [
+                    'original_size' => $file_size_before,
+                    'metadata' => $new_meta
+                ]);
+                
+                $this->log_conversion_error($att_id, 'File disappeared during metadata generation', 'metadata_generation', [
+                    'converted_path' => $new_path,
+                    'file_size_before' => $file_size_before
+                ]);
+                update_post_meta($att_id, self::STATUS_META, 'file_corrupted_during_metadata');
+                return false;
+            }
+            
         } catch (Exception $e) {
+            $this->log_resize_debug($att_id, "Exception during metadata generation", [
+                'exception_message' => $e->getMessage(),
+                'exception_class' => get_class($e),
+                'file_exists' => file_exists($new_path)
+            ]);
+            
             $this->log_conversion_error($att_id, 'Metadata generation exception: ' . $e->getMessage(), 'metadata_generation', [
                 'converted_path' => $new_path,
                 'exception_class' => get_class($e)
@@ -1756,26 +1863,90 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             return false;
         }
 
-        // Update attachment post + metas
+        // Update attachment post + metas with enhanced safety checks
         try {
-        $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
-            $post_update_result = wp_update_post([
-            'ID'             => $att_id,
-            'post_mime_type' => $target_mime,
-            'guid'           => $uploads['baseurl'] . '/' . $new_meta['file'],
-        ]);
+            $target_mime = self::SUPPORTED_TARGET_FORMATS[$target_format]['mime'] ?? 'image/webp';
             
-            if (is_wp_error($post_update_result) || $post_update_result === 0) {
-                throw new Exception('wp_update_post failed: ' . (is_wp_error($post_update_result) ? $post_update_result->get_error_message() : 'Unknown error'));
+            // SAFETY CHECK: Verify attachment post still exists before updating
+            $attachment_before = get_post($att_id);
+            if (!$attachment_before) {
+                $this->log_resize_debug($att_id, "CRITICAL - Attachment post missing before update", [
+                    'attachment_id' => $att_id
+                ]);
+                
+                $this->log_conversion_error($att_id, 'Attachment post disappeared before update', 'attachment_update', [
+                    'attachment_id' => $att_id,
+                    'target_mime' => $target_mime
+                ]);
+                update_post_meta($att_id, self::STATUS_META, 'post_missing');
+                return false;
             }
             
-        update_post_meta($att_id, '_wp_attached_file', $new_meta['file']);
-        wp_update_attachment_metadata($att_id, $new_meta);
+            $this->log_resize_debug($att_id, "Starting attachment post update", [
+                'current_mime' => $attachment_before->post_mime_type,
+                'target_mime' => $target_mime,
+                'current_guid' => $attachment_before->guid,
+                'new_guid' => $uploads['baseurl'] . '/' . $new_meta['file'],
+                'new_file' => $new_meta['file']
+            ]);
+            
+            // Update post with error checking
+            $post_update_result = wp_update_post([
+                'ID'             => $att_id,
+                'post_mime_type' => $target_mime,
+                'guid'           => $uploads['baseurl'] . '/' . $new_meta['file'],
+            ]);
+            
+            if (is_wp_error($post_update_result) || $post_update_result === 0) {
+                $error_message = is_wp_error($post_update_result) ? $post_update_result->get_error_message() : 'Unknown error';
+                
+                $this->log_resize_debug($att_id, "Post update FAILED", [
+                    'error' => $error_message,
+                    'update_result' => $post_update_result,
+                    'post_still_exists' => get_post($att_id) ? true : false
+                ]);
+                
+                throw new Exception('wp_update_post failed: ' . $error_message);
+            }
+            
+            // Verify post update was successful
+            $attachment_after = get_post($att_id);
+            if (!$attachment_after) {
+                $this->log_resize_debug($att_id, "CRITICAL - Attachment post disappeared after update", [
+                    'update_result' => $post_update_result
+                ]);
+                
+                throw new Exception('Attachment post disappeared after wp_update_post');
+            }
+            
+            $this->log_resize_debug($att_id, "Post update SUCCESS", [
+                'updated_mime' => $attachment_after->post_mime_type,
+                'updated_guid' => $attachment_after->guid
+            ]);
+            
+            // Update metadata with safety checks
+            $meta_update_result = update_post_meta($att_id, '_wp_attached_file', $new_meta['file']);
+            $attachment_meta_result = wp_update_attachment_metadata($att_id, $new_meta);
+            
+            $this->log_resize_debug($att_id, "Metadata update completed", [
+                'attached_file_updated' => $meta_update_result,
+                'attachment_metadata_updated' => $attachment_meta_result !== false,
+                'post_still_exists' => get_post($att_id) ? true : false
+            ]);
+            
         } catch (Exception $e) {
+            $this->log_resize_debug($att_id, "Exception during attachment update", [
+                'exception_message' => $e->getMessage(),
+                'exception_class' => get_class($e),
+                'post_exists' => get_post($att_id) ? true : false
+            ]);
+            
             $this->log_conversion_error($att_id, 'Failed to update attachment metadata: ' . $e->getMessage(), 'attachment_update', [
                 'target_mime' => $target_mime ?? '',
-                'new_file' => $new_meta['file'] ?? ''
+                'new_file' => $new_meta['file'] ?? '',
+                'attachment_exists_after_error' => get_post($att_id) ? true : false
             ]);
+            
             // Clean up converted file and preserve original
             @unlink($new_path);
             return false;
@@ -2067,6 +2238,59 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             }
             error_log('WebP Migrator: Resize exception - ' . $e->getMessage());
             return false;
+        }
+    }
+    
+    /**
+     * Debug logging specifically for resize operations
+     */
+    private function log_resize_debug($att_id, $message, $context = []) {
+        $upload_dir = wp_get_upload_dir();
+        $log_file = trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-resize-debug.json';
+        
+        $timestamp = current_time('mysql');
+        $timestamp_unix = current_time('timestamp');
+        
+        // Get attachment info
+        $attachment = get_post($att_id);
+        $attachment_title = $attachment ? $attachment->post_title : 'Unknown';
+        $attached_file = get_attached_file($att_id);
+        
+        $entry = [
+            'timestamp' => $timestamp,
+            'timestamp_unix' => $timestamp_unix,
+            'attachment_id' => $att_id,
+            'attachment_title' => $attachment_title,
+            'attached_file' => $attached_file,
+            'message' => $message,
+            'context' => $context,
+            'memory_usage' => memory_get_usage(true),
+            'memory_peak' => memory_get_peak_usage(true)
+        ];
+        
+        // Load existing log
+        $existing_log = [];
+        if (file_exists($log_file)) {
+            $existing_content = @file_get_contents($log_file);
+            if ($existing_content) {
+                $existing_log = json_decode($existing_content, true) ?: [];
+            }
+        }
+        
+        // Add new entry  
+        $existing_log[] = $entry;
+        
+        // Keep only last 1000 entries to prevent log file from growing too large
+        if (count($existing_log) > 1000) {
+            $existing_log = array_slice($existing_log, -1000);
+        }
+        
+        // Write back to file
+        @file_put_contents($log_file, json_encode($existing_log, JSON_PRETTY_PRINT));
+        
+        // Also log to WordPress error log for critical messages
+        if (stripos($message, 'critical') !== false || stripos($message, 'failed') !== false) {
+            error_log("WebP Migrator Resize Debug [#{$att_id}]: {$message} - Context: " . json_encode($context));
         }
     }
     
@@ -2793,6 +3017,75 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     }
     
     /**
+     * Render debug logs tab
+     */
+    public function render_debug_logs_tab() {
+        $upload_dir = wp_get_upload_dir();
+        $resize_log_file = trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-resize-debug.json';
+        
+        ?>
+        <h2>Debug Logs</h2>
+        <p>Comprehensive debugging system for image conversion and resize operations.</p>
+        
+        <div style="margin: 20px 0; padding: 15px; border-left: 4px solid #0073aa; background: #f0f8ff;">
+            <h3>Enhanced Debug Logging is Now Active</h3>
+            <p>The plugin now includes comprehensive debug logging for all resize operations. Here's how to use it:</p>
+            
+            <ol>
+                <li><strong>Log Location:</strong> <code><?php echo esc_html($resize_log_file); ?></code></li>
+                <li><strong>Reproduce the Issue:</strong> Run batch processing to generate debug entries</li>
+                <li><strong>View Logs:</strong> Access the file directly or check WordPress error logs</li>
+                <li><strong>Share for Support:</strong> Copy the JSON log contents for troubleshooting</li>
+            </ol>
+            
+            <p><strong>What's Being Logged:</strong></p>
+            <ul>
+                <li>Every resize attempt with before/after file states</li>
+                <li>Detailed error information when operations fail</li>
+                <li>Rollback attempts and their success/failure</li>
+                <li>File existence and size verification at each step</li>
+                <li>Metadata generation tracking</li>
+                <li>WordPress post update tracking</li>
+            </ul>
+            
+            <?php if (file_exists($resize_log_file)): ?>
+                <div class="notice notice-success inline">
+                    <p><strong>✅ Debug log file exists</strong> - Recent resize operations have been logged.</p>
+                    <p><strong>File size:</strong> <?php echo esc_html(size_format(filesize($resize_log_file))); ?></p>
+                </div>
+            <?php else: ?>
+                <div class="notice notice-info inline">
+                    <p><strong>ℹ️ No debug log yet</strong> - The log will be created when resize operations occur.</p>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <div style="margin: 20px 0; padding: 15px; border: 1px solid #d63638; background: #ffeaea;">
+            <h3>🚨 Critical Fixes Applied</h3>
+            <p>The following critical improvements have been implemented to prevent image loss:</p>
+            <ul>
+                <li><strong>Safe Resize Method:</strong> Uses temporary files to prevent corruption</li>
+                <li><strong>Pre-resize Backups:</strong> Creates backups before any resize attempt</li>
+                <li><strong>Automatic Rollback:</strong> Restores files if resize fails</li>
+                <li><strong>File Integrity Checks:</strong> Verifies files exist at each processing step</li>
+                <li><strong>Enhanced Error Recovery:</strong> Prevents WordPress posts from being deleted</li>
+            </ul>
+        </div>
+        
+        <div style="margin: 20px 0; padding: 15px; border: 1px solid #ffb900; background: #fff8e1;">
+            <h3>Next Steps for Debugging</h3>
+            <ol>
+                <li><strong>Run a Test:</strong> Process a few images using the Batch Processor</li>
+                <li><strong>Check the Log:</strong> Look for detailed entries in <code><?php echo esc_html($resize_log_file); ?></code></li>
+                <li><strong>Copy Log Contents:</strong> If issues persist, copy the entire JSON file contents</li>
+                <li><strong>Share for Analysis:</strong> Provide the log data for comprehensive troubleshooting</li>
+            </ol>
+        </div>
+        
+        <?php
+    }
+    
+    /**
      * Get comprehensive plugin statistics and metadata counts
      */
     private function get_plugin_statistics() {
@@ -3187,9 +3480,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             
             <div id="progress-container" style="display: none; margin: 20px 0;">
                 <div style="background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; overflow: hidden;">
-                    <div id="progress-bar" style="background: #0073aa; height: 20px; width: 0%; transition: width 0.3s;"></div>
+                    <div id="progress-bar" style="background: #0073aa; height: 20px; width: 0%; transition: width 0.3s, background-color 0.5s ease;"></div>
                 </div>
                 <p id="progress-text">Processing...</p>
+                <div id="completion-message" style="display: none; margin-top: 15px; padding: 15px; border: 2px solid #00a32a; border-radius: 4px; background: linear-gradient(135deg, #f0fff4 0%, #e6ffe6 100%); box-shadow: 0 2px 4px rgba(0,163,42,0.1);"></div>
             </div>
             
             <div id="results-container" style="margin: 20px 0;">
@@ -3213,6 +3507,55 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 border-color: #e67e00 !important;
                 color: white !important;
             }
+            
+            /* Progress Bar Completion States */
+            .progress-complete {
+                background: linear-gradient(90deg, #00a32a 0%, #00c73c 100%) !important;
+                box-shadow: 0 0 10px rgba(0, 163, 42, 0.3);
+                animation: progressGlow 2s ease-in-out infinite alternate;
+            }
+            
+            @keyframes progressGlow {
+                from { box-shadow: 0 0 10px rgba(0, 163, 42, 0.3); }
+                to { box-shadow: 0 0 15px rgba(0, 163, 42, 0.6); }
+            }
+            
+            .completion-message {
+                color: #155724;
+                font-weight: bold;
+                text-shadow: 1px 1px 2px rgba(0, 163, 42, 0.1);
+                animation: completionFadeIn 0.8s ease-out;
+            }
+            
+            .completion-message .completion-icon {
+                color: #00a32a;
+                font-size: 18px;
+                margin-right: 8px;
+                text-shadow: 0 0 3px rgba(0, 163, 42, 0.3);
+            }
+            
+            .completion-message .completion-title {
+                font-size: 16px;
+                font-weight: bold;
+                margin-bottom: 5px;
+            }
+            
+            .completion-message .completion-stats {
+                font-size: 14px;
+                margin-top: 8px;
+                color: #0d4e15;
+            }
+            
+            @keyframes completionFadeIn {
+                from { 
+                    opacity: 0; 
+                    transform: translateY(10px);
+                }
+                to { 
+                    opacity: 1; 
+                    transform: translateY(0);
+                }
+            }
             </style>
             
             <script>
@@ -3224,6 +3567,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 var totalErrors = 0;
                 var initialQueueCount = 0;
                 var batchTimeout = 300000; // 5 minutes timeout per batch
+                var batchProcessStartTime = 0; // Track overall batch processing start time
                 
                 // Load queue count with safety features and loading UI
                 var countRequest = null;
@@ -3311,6 +3655,47 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     $('.dashicons-update').hide().removeClass('spin');
                     $('#cancel-count').hide();
                     $('#recount-images').prop('disabled', false);
+                }
+                
+                // Function to handle progress bar completion
+                function markProcessingComplete(progressBarId, progressTextId, completionMessageId, stats) {
+                    const progressBar = $(progressBarId);
+                    const progressText = $(progressTextId);
+                    const completionMessage = $(completionMessageId);
+                    
+                    // Animate progress bar to completion state
+                    progressBar.addClass('progress-complete');
+                    progressText.html('<span style="color: #00a32a; font-weight: bold;">✅ Processing Complete!</span>');
+                    
+                    // Create completion message
+                    const completionHtml = `
+                        <div class="completion-message">
+                            <div class="completion-title">
+                                <span class="completion-icon">🎉</span>
+                                <strong>Batch Processing Successfully Completed!</strong>
+                            </div>
+                            <div class="completion-stats">
+                                <strong>Total Processed:</strong> ${stats.processed || 0} images<br>
+                                <strong>Successful:</strong> ${stats.successful || 0} | 
+                                <strong>Errors:</strong> ${stats.errors || 0}<br>
+                                ${stats.duration ? `<strong>Duration:</strong> ${stats.duration}` : ''}
+                            </div>
+                        </div>
+                    `;
+                    
+                    completionMessage.html(completionHtml).slideDown(400);
+                    
+                    // Optional: Auto-hide after 10 seconds
+                    setTimeout(function() {
+                        completionMessage.fadeOut(1000);
+                    }, 10000);
+                }
+                
+                // Function to reset progress bar to initial state
+                function resetProgressBar(progressBarId, progressTextId, completionMessageId, defaultText) {
+                    $(progressBarId).removeClass('progress-complete').css('width', '0%');
+                    $(progressTextId).text(defaultText || 'Processing...');
+                    $(completionMessageId).hide().empty();
                 }
                 
                 // Process a single batch with graceful stopping support
@@ -3403,7 +3788,22 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                                 gracefulStopInProgress = false;
                                 $('#start-batch').show().text('Start Batch Processing');
                                 $('#stop-batch').hide().prop('disabled', false).text('Stop Processing');
-                                $('#progress-text').text('All processing completed!');
+                                
+                                // Calculate duration
+                                var endTime = Date.now();
+                                var duration = Math.round((endTime - batchProcessStartTime) / 1000);
+                                var durationText = duration > 60 ? 
+                                    Math.floor(duration / 60) + 'm ' + (duration % 60) + 's' : 
+                                    duration + 's';
+                                
+                                // Mark as complete with enhanced styling
+                                markProcessingComplete('#progress-bar', '#progress-text', '#completion-message', {
+                                    processed: totalProcessed,
+                                    successful: totalProcessed - totalErrors,
+                                    errors: totalErrors,
+                                    duration: durationText
+                                });
+                                
                                 loadQueueCount(); // Refresh queue count
                             }
                         } else {
@@ -3455,6 +3855,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     gracefulStopInProgress = false;
                     totalProcessed = 0;
                     totalErrors = 0;
+                    batchProcessStartTime = Date.now(); // Track start time for duration calculation
+                    
+                    // Reset progress bar to initial state
+                    resetProgressBar('#progress-bar', '#progress-text', '#completion-message', 'Processing...');
                     
                     $(this).hide();
                     $('#stop-batch').show().prop('disabled', false).text('Stop Processing');
@@ -3599,9 +4003,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             
             <div id="reprocess-progress" style="display: none; margin: 20px 0;">
                 <div style="background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; overflow: hidden;">
-                    <div id="reprocess-progress-bar" style="background: #00a32a; height: 20px; width: 0%; transition: width 0.3s;"></div>
+                    <div id="reprocess-progress-bar" style="background: #0073aa; height: 20px; width: 0%; transition: width 0.3s, background-color 0.5s ease;"></div>
                 </div>
                 <p id="reprocess-progress-text">Reprocessing...</p>
+                <div id="reprocess-completion-message" style="display: none; margin-top: 15px; padding: 15px; border: 2px solid #00a32a; border-radius: 4px; background: linear-gradient(135deg, #f0fff4 0%, #e6ffe6 100%); box-shadow: 0 2px 4px rgba(0,163,42,0.1);"></div>
             </div>
             
             <div id="reprocess-results" style="margin: 20px 0;">
