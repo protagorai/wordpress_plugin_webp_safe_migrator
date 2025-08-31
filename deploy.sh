@@ -41,13 +41,14 @@ show_help() {
     echo "  help        Show this help message"
     echo ""
     echo -e "${CYAN}EXAMPLES:${NC}"
-    echo "  ./deploy.sh start         # Start multi-plugin environment"
-    echo "  ./deploy.sh stop          # Stop containers"
-    echo "  ./deploy.sh clean         # Clean slate"
-    echo "  ./deploy.sh download      # Pre-download for speed"
-    echo "  ./deploy.sh manage        # WordPress management"
-    echo "  ./deploy.sh plugins list  # List available plugins"
-    echo "  ./deploy.sh fix           # Fix upload permissions"
+    echo "  ./deploy.sh start                         # Start multi-plugin environment"
+    echo "  ./deploy.sh stop                          # Stop containers"
+    echo "  ./deploy.sh clean                         # Clean slate"
+    echo "  ./deploy.sh plugins list                  # List available plugins"
+    echo "  ./deploy.sh plugins activate              # Show plugin status"
+    echo "  ./deploy.sh plugins activate PLUGIN       # Activate specific plugin"
+    echo "  ./deploy.sh plugins status                # Check WordPress plugin status"
+    echo "  ./deploy.sh fix                           # Fix upload permissions"
     echo ""
     echo -e "${CYAN}MULTI-PLUGIN MANAGEMENT:${NC}"
     echo "  ./setup/multi-plugin-manager.sh list                    # List available plugins"
@@ -121,10 +122,40 @@ case "$1" in
             else
                 echo -e "${RED}Configuration deployment script not found${NC}"
             fi
+        elif [[ "$2" == "activate" ]]; then
+            if [[ -z "$3" ]]; then
+                echo -e "${CYAN}Showing current plugin status...${NC}"
+                if command -v powershell >/dev/null 2>&1; then
+                    powershell -ExecutionPolicy Bypass -File "setup/activate-plugin-manually.ps1"
+                else
+                    echo -e "${CYAN}Current plugin status in WordPress:${NC}"
+                    podman exec webp-migrator-wordpress wp plugin list --allow-root 2>/dev/null || {
+                        echo -e "${RED}WordPress container not running or wp-cli not available${NC}"
+                    }
+                fi
+            else
+                echo -e "${CYAN}Activating plugin: $3${NC}"
+                if podman exec webp-migrator-wordpress wp plugin activate "$3" --allow-root 2>/dev/null; then
+                    echo -e "${GREEN}✓ Plugin '$3' activated successfully!${NC}"
+                else
+                    echo -e "${RED}✗ Plugin activation failed${NC}"
+                fi
+            fi
+        elif [[ "$2" == "status" ]]; then
+            echo -e "${CYAN}Checking plugin status in WordPress...${NC}"
+            podman exec webp-migrator-wordpress wp plugin list --allow-root 2>/dev/null
         else
             echo -e "${CYAN}Available plugin commands:${NC}"
-            echo "  list    - List available plugins"
-            echo "  deploy  - Deploy plugins to running container"
+            echo "  list       - List available plugins"
+            echo "  deploy     - Deploy plugins to running container"
+            echo "  activate   - Show plugin status or activate specific plugin"
+            echo "  status     - Show WordPress plugin status"
+            echo ""
+            echo -e "${CYAN}Examples:${NC}"
+            echo "  ./deploy.sh plugins list"
+            echo "  ./deploy.sh plugins activate"
+            echo "  ./deploy.sh plugins activate example-second-plugin"
+            echo "  ./deploy.sh plugins status"
         fi
         ;;
     fix)

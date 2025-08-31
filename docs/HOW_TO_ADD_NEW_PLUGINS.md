@@ -211,3 +211,42 @@ podman exec webp-migrator-wordpress wp plugin status --allow-root
 - **Enhanced activation logic** for future plugins
 
 **Next time you run `deploy.bat start`, both plugins will be activated according to the configuration!** 🎯
+
+## 🔧 **Manual Plugin Activation Script**
+
+### **activate-plugin-manually.ps1**
+A utility script for manually activating plugins in running WordPress containers.
+
+**Purpose**: 
+- Activate individual plugins without full redeployment
+- Check current plugin status in WordPress
+- Troubleshoot plugin activation issues
+
+**Usage**:
+```bash
+# Check all plugin status
+deploy.bat plugins activate              # Windows
+./deploy.sh plugins activate             # Linux/macOS
+
+# Activate specific plugin  
+deploy.bat plugins activate example-second-plugin     # Windows
+./deploy.sh plugins activate example-second-plugin    # Linux/macOS
+
+# Check WordPress plugin status
+deploy.bat plugins status               # Windows  
+./deploy.sh plugins status              # Linux/macOS
+```
+
+**When to use**:
+- Plugin deployment succeeded but activation failed
+- Testing individual plugins during development
+- Quick activation without full environment restart
+- Troubleshooting plugin activation issues
+
+**Requirements**:
+- WordPress container running (`deploy.bat start`)
+- Plugins already deployed to WordPress
+- Podman/Docker available for container access
+
+**Location**: Integrated into main deployment entry points (`deploy.bat`/`deploy.sh`)
+**Script**: Available at `setup/activate-plugin-manually.ps1` (for advanced use)

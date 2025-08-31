@@ -42,12 +42,14 @@ echo   fix         Fix upload permissions (if uploads fail)
 echo   help        Show this help message
 echo.
 echo EXAMPLES:
-echo   deploy start         # Start multi-plugin environment
-echo   deploy stop          # Stop containers
-echo   deploy clean         # Clean slate
-echo   deploy download      # Pre-download for speed
-echo   deploy plugins list  # List available plugins
-echo   deploy fix           # Fix upload permissions
+echo   deploy start                        # Start multi-plugin environment
+echo   deploy stop                         # Stop containers
+echo   deploy clean                        # Clean slate
+echo   deploy plugins list                 # List available plugins
+echo   deploy plugins activate             # Show plugin status  
+echo   deploy plugins activate PLUGIN     # Activate specific plugin
+echo   deploy plugins status               # Check WordPress plugin status
+echo   deploy fix                          # Fix upload permissions
 echo.
 echo MULTI-PLUGIN MANAGEMENT:
 echo   setup\multi-plugin-manager.ps1 list        # List available plugins
@@ -330,10 +332,29 @@ if "%2"=="" (
 ) else if "%2"=="deploy" (
     echo * Deploying plugins to running container...
     powershell -ExecutionPolicy Bypass -File "setup\deploy-plugins-to-container.ps1" -ContainerName "webp-migrator-wordpress" -Profile "development"
+) else if "%2"=="activate" (
+    if "%3"=="" (
+        echo * Showing current plugin status...
+        powershell -ExecutionPolicy Bypass -File "setup\activate-plugin-manually.ps1"
+    ) else (
+        echo * Activating plugin: %3
+        powershell -ExecutionPolicy Bypass -File "setup\activate-plugin-manually.ps1" -PluginSlug "%3"
+    )
+) else if "%2"=="status" (
+    echo * Checking plugin status in WordPress...
+    podman exec webp-migrator-wordpress wp plugin list --allow-root 2>nul
 ) else (
     echo Available plugin commands:
-    echo   list    - List available plugins
-    echo   deploy  - Deploy plugins to running container
+    echo   list       - List available plugins
+    echo   deploy     - Deploy plugins to running container
+    echo   activate   - Show plugin status or activate specific plugin
+    echo   status     - Show WordPress plugin status
+    echo.
+    echo Examples:
+    echo   deploy.bat plugins list
+    echo   deploy.bat plugins activate
+    echo   deploy.bat plugins activate example-second-plugin
+    echo   deploy.bat plugins status
     powershell -ExecutionPolicy Bypass -File "setup\clean-plugin-list.ps1" -Action "list"
 )
 goto end

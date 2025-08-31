@@ -21,6 +21,11 @@
 - **[Multi-Plugin Implementation Summary](technical/MULTI_PLUGIN_IMPLEMENTATION_SUMMARY.md)** - Implementation results and benefits
 - **[Complete Project Summary](FINAL_PROJECT_COMPLETION_SUMMARY.md)** - Final project completion and success metrics
 
+### 🔧 Plugin Development & Management
+- **[How to Add New Plugins](HOW_TO_ADD_NEW_PLUGINS.md)** - Complete guide for adding and configuring new plugins
+- **[Plugin Discovery System](HOW_PLUGIN_DISCOVERY_WORKS.md)** - How automatic plugin detection works
+- **[Graceful Stop Implementation](technical/GRACEFUL_STOP_IMPLEMENTATION.md)** - AJAX operation safety improvements
+
 ### 📊 Visual Documentation
 - **[System Diagrams](diagrams/)** - Visual architecture and flow diagrams
   - [High-Level Architecture](diagrams/high-level.svg) - Overall system components and relationships

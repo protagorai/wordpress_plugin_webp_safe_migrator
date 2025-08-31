@@ -3001,12 +3001,33 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 <div id="results-log" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: white; font-family: monospace; font-size: 12px; display: none;"></div>
             </div>
             
+            <style>
+            .spin {
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+            .dashicons-update.spin {
+                display: inline-block;
+            }
+            .graceful-stop-requested {
+                background: #ff8800 !important;
+                border-color: #e67e00 !important;
+                color: white !important;
+            }
+            </style>
+            
             <script>
             jQuery(document).ready(function($) {
                 var processing = false;
+                var stopRequested = false;
+                var gracefulStopInProgress = false;
                 var totalProcessed = 0;
                 var totalErrors = 0;
                 var initialQueueCount = 0;
+                var batchTimeout = 300000; // 5 minutes timeout per batch
                 
                 // Load initial queue count
                 function loadQueueCount() {
@@ -3021,18 +3042,28 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     });
                 }
                 
-                // Process a single batch
+                // Process a single batch with graceful stopping support
                 function processBatch() {
                     if (!processing) return;
                     
-                    var batchSize = parseInt($('#batch-size').val());
+                    // Check if graceful stop was requested
+                    if (stopRequested && !gracefulStopInProgress) {
+                        gracefulStopInProgress = true;
+                        $('#progress-text').text('Finishing current batch, then stopping...');
+                        $('#stop-batch').prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Stopping...');
+                    }
                     
-                    $.post(ajaxurl, {
+                    var batchSize = parseInt($('#batch-size').val());
+                    var batchStartTime = Date.now();
+                    
+                    // Add timeout to prevent hanging
+                    var batchRequest = $.post(ajaxurl, {
                         action: 'okvir_image_migrator_process_batch',
                         nonce: '<?php echo wp_create_nonce('okvir_image_migrator_batch'); ?>',
                         batch_size: batchSize,
                         quality: <?php echo esc_js($quality); ?>,
-                        validation: <?php echo esc_js($validation); ?>
+                        validation: <?php echo esc_js($validation); ?>,
+                        timeout: batchTimeout
                     }, function(response) {
                         if (response.success) {
                             var data = response.data;
@@ -3069,54 +3100,159 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                             });
                             logDiv.scrollTop(logDiv[0].scrollHeight);
                             
-                            // Continue processing if there are remaining items
-                            if (data.remaining > 0 && processing) {
-                                setTimeout(processBatch, 1000); // 1 second delay between batches
-                            } else {
-                                // Processing complete
+                            // Check for graceful stop before continuing
+                            if (stopRequested) {
+                                // Graceful stop: finish current batch but don't continue
                                 processing = false;
+                                stopRequested = false;
+                                gracefulStopInProgress = false;
                                 $('#start-batch').show().text('Start Batch Processing');
-                                $('#stop-batch').hide();
-                                $('#progress-text').text('Processing complete!');
+                                $('#stop-batch').hide().prop('disabled', false).text('Stop Processing');
+                                $('#progress-text').text('Processing stopped gracefully after completing current batch.');
+                                loadQueueCount(); // Refresh queue count
+                                
+                                // Log graceful stop
+                                var timestamp = new Date().toLocaleTimeString();
+                                var logDiv = $('#results-log');
+                                logDiv.append(
+                                    '<div style="margin-bottom: 5px; color: #ff8800; font-weight: bold;">' +
+                                    '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                                    'Processing stopped gracefully - current batch completed safely.' +
+                                    '</div>'
+                                );
+                                logDiv.scrollTop(logDiv[0].scrollHeight);
+                                
+                            } else if (data.remaining > 0 && processing) {
+                                // Continue processing if there are remaining items and no stop requested
+                                setTimeout(processBatch, 1500); // 1.5 second delay between batches for stability
+                            } else {
+                                // Processing complete naturally
+                                processing = false;
+                                stopRequested = false;
+                                gracefulStopInProgress = false;
+                                $('#start-batch').show().text('Start Batch Processing');
+                                $('#stop-batch').hide().prop('disabled', false).text('Stop Processing');
+                                $('#progress-text').text('All processing completed!');
                                 loadQueueCount(); // Refresh queue count
                             }
                         } else {
-                            // Error occurred
+                            // Error occurred - reset all states
                             processing = false;
+                            stopRequested = false;
+                            gracefulStopInProgress = false;
                             $('#start-batch').show();
-                            $('#stop-batch').hide();
+                            $('#stop-batch').hide().prop('disabled', false).text('Stop Processing');
                             alert('Error: ' + (response.data || 'Unknown error occurred'));
                         }
                     }).fail(function() {
+                        // Network error - reset all states
                         processing = false;
+                        stopRequested = false;
+                        gracefulStopInProgress = false;
                         $('#start-batch').show();
-                        $('#stop-batch').hide();
+                        $('#stop-batch').hide().prop('disabled', false).text('Stop Processing');
                         alert('Network error occurred. Please try again.');
                     });
+                    
+                    // Set timeout for this batch request
+                    setTimeout(function() {
+                        if (batchRequest.readyState !== 4) {
+                            batchRequest.abort();
+                            $('#progress-text').text('Batch timeout - will retry next batch automatically');
+                            
+                            // Log timeout
+                            var timestamp = new Date().toLocaleTimeString();
+                            var logDiv = $('#results-log');
+                            logDiv.append(
+                                '<div style="margin-bottom: 5px; color: #ff8800;">' +
+                                '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                                'Batch timeout after ' + (batchTimeout / 1000) + ' seconds - continuing with next batch' +
+                                '</div>'
+                            );
+                            logDiv.scrollTop(logDiv[0].scrollHeight);
+                        }
+                    }, batchTimeout);
                 }
                 
                 // Start button click
                 $('#start-batch').click(function() {
                     if (processing) return;
                     
+                    // Reset all states for fresh start
                     processing = true;
+                    stopRequested = false;
+                    gracefulStopInProgress = false;
                     totalProcessed = 0;
                     totalErrors = 0;
                     
                     $(this).hide();
-                    $('#stop-batch').show();
+                    $('#stop-batch').show().prop('disabled', false).text('Stop Processing');
                     $('#progress-container').show();
                     $('#results-log').empty();
+                    
+                    // Log start
+                    var timestamp = new Date().toLocaleTimeString();
+                    var logDiv = $('#results-log');
+                    logDiv.show();
+                    logDiv.append(
+                        '<div style="margin-bottom: 5px; color: #0073aa; font-weight: bold;">' +
+                        '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                        'Batch processing started. Use "Stop Processing" for graceful shutdown.' +
+                        '</div>'
+                    );
                     
                     processBatch();
                 });
                 
-                // Stop button click
+                // Stop button click - implements graceful stopping
                 $('#stop-batch').click(function() {
-                    processing = false;
-                    $('#start-batch').show();
-                    $(this).hide();
-                    loadQueueCount(); // Refresh queue count
+                    if (!processing) return; // Already stopped
+                    
+                    if (gracefulStopInProgress) {
+                        // Already stopping gracefully, don't allow double-click
+                        return;
+                    }
+                    
+                    // Request graceful stop (don't stop immediately)
+                    stopRequested = true;
+                    
+                    // Update UI to show stop is being processed
+                    $(this).prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Stop Requested...');
+                    $('#progress-text').text('Stop requested - will finish current batch safely...');
+                    
+                    // Log stop request
+                    var timestamp = new Date().toLocaleTimeString();
+                    var logDiv = $('#results-log');
+                    logDiv.append(
+                        '<div style="margin-bottom: 5px; color: #ff8800; font-weight: bold;">' +
+                        '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                        'Graceful stop requested - finishing current batch to prevent inconsistent state...' +
+                        '</div>'
+                    );
+                    logDiv.scrollTop(logDiv[0].scrollHeight);
+                    
+                    // Set emergency timeout (in case batch hangs)
+                    setTimeout(function() {
+                        if (stopRequested && processing) {
+                            // Emergency stop after 2 minutes
+                            processing = false;
+                            stopRequested = false;
+                            gracefulStopInProgress = false;
+                            $('#start-batch').show().text('Start Batch Processing');
+                            $('#stop-batch').hide().prop('disabled', false).text('Stop Processing');
+                            $('#progress-text').text('Emergency stop - batch may have timed out');
+                            
+                            var timestamp = new Date().toLocaleTimeString();
+                            var logDiv = $('#results-log');
+                            logDiv.append(
+                                '<div style="margin-bottom: 5px; color: #d63638; font-weight: bold;">' +
+                                '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                                'Emergency stop activated - current batch may have timed out. Check results carefully.' +
+                                '</div>'
+                            );
+                            logDiv.scrollTop(logDiv[0].scrollHeight);
+                        }
+                    }, 120000); // 2 minutes emergency timeout
                 });
                 
                 // Load initial queue count
@@ -3185,20 +3321,32 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             <script>
             jQuery(document).ready(function($) {
                 var reprocessing = false;
+                var reprocessStopRequested = false;
+                var reprocessGracefulStopInProgress = false;
                 var totalReprocessed = 0;
                 var totalFixed = 0;
                 var totalStillErrors = 0;
                 var errorIds = <?php echo wp_json_encode(array_keys($log_data)); ?>;
                 var currentIndex = 0;
+                var reprocessTimeout = 180000; // 3 minutes timeout for reprocessing
                 
                 function reprocessBatch() {
                     if (!reprocessing || currentIndex >= errorIds.length) {
                         // Reprocessing complete
                         reprocessing = false;
+                        reprocessStopRequested = false;
+                        reprocessGracefulStopInProgress = false;
                         $('#start-reprocess').show().text('Start Reprocessing');
-                        $('#stop-reprocess').hide();
+                        $('#stop-reprocess').hide().prop('disabled', false).text('Stop');
                         $('#reprocess-progress-text').text('Reprocessing complete!');
                         return;
+                    }
+                    
+                    // Check for graceful stop before continuing
+                    if (reprocessStopRequested && !reprocessGracefulStopInProgress) {
+                        reprocessGracefulStopInProgress = true;
+                        $('#reprocess-progress-text').text('Finishing current batch, then stopping...');
+                        $('#stop-reprocess').prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Stopping...');
                     }
                     
                     var batchSize = parseInt($('#reprocess-batch-size').val());
@@ -3287,33 +3435,112 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                         '<strong>Still Errors:</strong> ' + totalStillErrors
                     );
                     
-                    // Continue with next batch after delay
-                    if (reprocessing) {
-                        setTimeout(reprocessBatch, 2000); // 2 second delay for reprocessing
+                    // Check for graceful stop before continuing
+                    if (reprocessStopRequested) {
+                        // Graceful stop: finish current batch but don't continue
+                        reprocessing = false;
+                        reprocessStopRequested = false;
+                        reprocessGracefulStopInProgress = false;
+                        $('#start-reprocess').show().text('Start Reprocessing');
+                        $('#stop-reprocess').hide().prop('disabled', false).text('Stop');
+                        $('#reprocess-progress-text').text('Reprocessing stopped gracefully after completing current batch.');
+                        
+                        // Log graceful stop
+                        var timestamp = new Date().toLocaleTimeString();
+                        var logDiv = $('#reprocess-log');
+                        logDiv.append(
+                            '<div style="margin-bottom: 5px; color: #ff8800; font-weight: bold;">' +
+                            '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                            'Reprocessing stopped gracefully - current batch completed safely.' +
+                            '</div>'
+                        );
+                        logDiv.scrollTop(logDiv[0].scrollHeight);
+                        
+                    } else if (reprocessing && currentIndex < errorIds.length) {
+                        // Continue with next batch after delay
+                        setTimeout(reprocessBatch, 2500); // 2.5 second delay for reprocessing stability
                     }
                 }
                 
                 $('#start-reprocess').click(function() {
                     if (reprocessing) return;
                     
+                    // Reset all states for fresh start
                     reprocessing = true;
+                    reprocessStopRequested = false;
+                    reprocessGracefulStopInProgress = false;
                     totalReprocessed = 0;
                     totalFixed = 0;
                     totalStillErrors = 0;
                     currentIndex = 0;
                     
                     $(this).hide();
-                    $('#stop-reprocess').show();
+                    $('#stop-reprocess').show().prop('disabled', false).text('Stop');
                     $('#reprocess-progress').show();
                     $('#reprocess-log').empty();
+                    
+                    // Log reprocess start
+                    var timestamp = new Date().toLocaleTimeString();
+                    var logDiv = $('#reprocess-log');
+                    logDiv.show();
+                    logDiv.append(
+                        '<div style="margin-bottom: 5px; color: #00a32a; font-weight: bold;">' +
+                        '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                        'Error reprocessing started. Use "Stop" for graceful shutdown.' +
+                        '</div>'
+                    );
                     
                     reprocessBatch();
                 });
                 
                 $('#stop-reprocess').click(function() {
-                    reprocessing = false;
-                    $('#start-reprocess').show();
-                    $(this).hide();
+                    if (!reprocessing) return; // Already stopped
+                    
+                    if (reprocessGracefulStopInProgress) {
+                        // Already stopping gracefully, don't allow double-click
+                        return;
+                    }
+                    
+                    // Request graceful stop for reprocessing
+                    reprocessStopRequested = true;
+                    
+                    // Update UI to show stop is being processed
+                    $(this).prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Stop Requested...');
+                    $('#reprocess-progress-text').text('Stop requested - finishing current reprocess batch safely...');
+                    
+                    // Log stop request
+                    var timestamp = new Date().toLocaleTimeString();
+                    var logDiv = $('#reprocess-log');
+                    logDiv.append(
+                        '<div style="margin-bottom: 5px; color: #ff8800; font-weight: bold;">' +
+                        '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                        'Graceful stop requested for reprocessing - finishing current batch safely...' +
+                        '</div>'
+                    );
+                    logDiv.scrollTop(logDiv[0].scrollHeight);
+                    
+                    // Set emergency timeout for reprocessing (shorter than main processing)
+                    setTimeout(function() {
+                        if (reprocessStopRequested && reprocessing) {
+                            // Emergency stop after 90 seconds for reprocessing
+                            reprocessing = false;
+                            reprocessStopRequested = false;
+                            reprocessGracefulStopInProgress = false;
+                            $('#start-reprocess').show().text('Start Reprocessing');
+                            $('#stop-reprocess').hide().prop('disabled', false).text('Stop');
+                            $('#reprocess-progress-text').text('Emergency stop - reprocess batch may have timed out');
+                            
+                            var timestamp = new Date().toLocaleTimeString();
+                            var logDiv = $('#reprocess-log');
+                            logDiv.append(
+                                '<div style="margin-bottom: 5px; color: #d63638; font-weight: bold;">' +
+                                '<span style="color: #666;">[' + timestamp + ']</span> ' +
+                                'Emergency stop for reprocessing - batch may have timed out. Check results carefully.' +
+                                '</div>'
+                            );
+                            logDiv.scrollTop(logDiv[0].scrollHeight);
+                        }
+                    }, 90000); // 90 seconds emergency timeout for reprocessing
                 });
             });
             </script>
