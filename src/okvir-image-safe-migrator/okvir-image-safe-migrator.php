@@ -63,6 +63,8 @@ class Okvir_Image_Safe_Migrator {
             add_action('wp_ajax_okvir_image_migrator_process_batch', [$this, 'ajax_process_batch']);
             add_action('wp_ajax_okvir_image_migrator_get_queue_count', [$this, 'ajax_get_queue_count']);
             add_action('wp_ajax_okvir_image_migrator_reprocess_single', [$this, 'ajax_reprocess_single']);
+            add_action('wp_ajax_okvir_get_log_content', [$this, 'ajax_get_log_content']);
+            add_action('wp_ajax_okvir_download_log', [$this, 'ajax_download_log']);
             register_activation_hook(__FILE__, [$this, 'on_activate']);
 
             // WP-CLI registration moved to after class definition
@@ -3022,22 +3024,360 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     public function render_debug_logs_tab() {
         $upload_dir = wp_get_upload_dir();
         $resize_log_file = trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-resize-debug.json';
+        $error_log_file = trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-conversion-errors.json';
+        $dimension_log_file = trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-dimension-inconsistencies.json';
+        
+        // Define log files array for easy management
+        $log_files = [
+            'resize' => [
+                'name' => 'Resize Debug Log',
+                'file' => $resize_log_file,
+                'description' => 'Detailed logging of image resize operations, file states, and error tracking'
+            ],
+            'errors' => [
+                'name' => 'Conversion Errors Log',
+                'file' => $error_log_file,
+                'description' => 'Comprehensive error logging for failed image conversions'
+            ],
+            'dimensions' => [
+                'name' => 'Dimension Issues Log',
+                'file' => $dimension_log_file,
+                'description' => 'Tracking of dimension inconsistencies in image files'
+            ]
+        ];
         
         ?>
+        <!-- CSS Styles for Log Viewer -->
+        <style>
+        .okvir-log-viewer-modal {
+            display: none;
+            position: fixed;
+            z-index: 100000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        
+        .okvir-log-viewer-content {
+            background-color: #fefefe;
+            margin: 2% auto;
+            padding: 0;
+            border: 1px solid #888;
+            width: 95%;
+            max-width: 1200px;
+            height: 90%;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .okvir-log-viewer-header {
+            padding: 15px 20px;
+            background: #f1f1f1;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .okvir-log-viewer-body {
+            flex: 1;
+            padding: 20px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .okvir-log-content {
+            flex: 1;
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 15px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-bottom: 15px;
+        }
+        
+        .okvir-log-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .okvir-close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .okvir-close:hover,
+        .okvir-close:focus {
+            color: black;
+            text-decoration: none;
+        }
+        
+        .okvir-log-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .okvir-log-card {
+            flex: 1;
+            min-width: 300px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            background: #fff;
+        }
+        
+        .okvir-log-card h4 {
+            margin: 0 0 8px 0;
+            color: #23282d;
+        }
+        
+        .okvir-log-card p {
+            margin: 0 0 15px 0;
+            color: #666;
+            font-size: 13px;
+        }
+        
+        .okvir-log-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .okvir-copy-icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEwLjUgMTBIMTFDMTEuMjc2MSAxMCAxMS41IDkuNzc2MSAxMS41IDkuNVYzQzExLjUgMi43MjM5IDExLjI3NjEgMi41IDExIDIuNUg0LjVDNC4yMjM4NiAyLjUgNCAyLjcyMzkgNCAzVjkuNUM0IDkuNzc2MSA0LjIyMzg2IDEwIDQuNSAxMEg1VjEyLjVDNSAxMy4zMjg0IDUuNjcxNTcgMTQgNi41IDE0SDEyLjVDMTMuMzI4NCAxNCAxNCAxMy4zMjg0IDE0IDEyLjVWNi5DMTU1IDe2NzE1NyAxMy4zMjg0IDUgMTIuNSA1SDEwVjVIMTAuNVoiIGZpbGw9IiM2NjY2NjYiLz4KPC9zdmc+');
+            background-repeat: no-repeat;
+            background-position: center;
+            margin-right: 5px;
+        }
+        
+        .okvir-download-icon {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTggMTFMMTEuNSA3LjVIOUgzVjNIMTNWOUgxMUw4IDExWiIgZmlsbD0iIzY2NjY2NiIvPgo8cGF0aCBkPSJNMiAxM0gyVjE0SDE0VjEzSDJaIiBmaWxsPSIjNjY2NjY2Ii8+Cjwvc3ZnPg==');
+            background-repeat: no-repeat;
+            background-position: center;
+            margin-right: 5px;
+        }
+        
+        .okvir-button-copy {
+            background: #0073aa;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+        }
+        
+        .okvir-button-copy:hover {
+            background: #005177;
+        }
+        
+        .okvir-button-download {
+            background: #00a32a;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            text-decoration: none;
+        }
+        
+        .okvir-button-download:hover {
+            background: #007f1e;
+            color: white;
+        }
+        </style>
+        
+        <!-- JavaScript for Log Viewer -->
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            window.okvirLogViewer = {
+                modal: null,
+                
+                init: function() {
+                    // Create modal HTML
+                    const modalHTML = `
+                        <div id="okvir-log-viewer-modal" class="okvir-log-viewer-modal">
+                            <div class="okvir-log-viewer-content">
+                                <div class="okvir-log-viewer-header">
+                                    <h3 id="okvir-log-title">Log Viewer</h3>
+                                    <span class="okvir-close">&times;</span>
+                                </div>
+                                <div class="okvir-log-viewer-body">
+                                    <div class="okvir-log-actions">
+                                        <button class="okvir-button-copy" onclick="okvirLogViewer.copyToClipboard()">
+                                            <span class="okvir-copy-icon"></span>Copy to Clipboard
+                                        </button>
+                                        <a id="okvir-download-link" class="okvir-button-download" href="#" download="">
+                                            <span class="okvir-download-icon"></span>Download Log File
+                                        </a>
+                                        <span id="okvir-copy-status" style="color: #46b450; margin-left: 10px;"></span>
+                                    </div>
+                                    <div id="okvir-log-content" class="okvir-log-content">Loading...</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    document.body.insertAdjacentHTML('beforeend', modalHTML);
+                    this.modal = document.getElementById('okvir-log-viewer-modal');
+                    
+                    // Close modal event listeners
+                    const closeBtn = this.modal.querySelector('.okvir-close');
+                    closeBtn.onclick = () => this.closeModal();
+                    
+                    window.onclick = (event) => {
+                        if (event.target === this.modal) {
+                            this.closeModal();
+                        }
+                    };
+                },
+                
+                openLogViewer: function(logType, logName) {
+                    if (!this.modal) this.init();
+                    
+                    document.getElementById('okvir-log-title').textContent = logName;
+                    document.getElementById('okvir-log-content').textContent = 'Loading log contents...';
+                    document.getElementById('okvir-copy-status').textContent = '';
+                    
+                    this.modal.style.display = 'block';
+                    
+                    // Load log content via AJAX
+                    this.loadLogContent(logType);
+                },
+                
+                loadLogContent: function(logType) {
+                    fetch(ajaxurl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({
+                            action: 'okvir_get_log_content',
+                            log_type: logType,
+                            nonce: '<?php echo wp_create_nonce('okvir_log_viewer_nonce'); ?>'
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        const contentDiv = document.getElementById('okvir-log-content');
+                        const downloadLink = document.getElementById('okvir-download-link');
+                        
+                        if (data.success) {
+                            contentDiv.textContent = data.data.content;
+                            downloadLink.href = data.data.download_url;
+                            downloadLink.download = data.data.filename;
+                        } else {
+                            contentDiv.textContent = data.data.message || 'Error loading log file.';
+                            downloadLink.style.display = 'none';
+                        }
+                    })
+                    .catch(error => {
+                        document.getElementById('okvir-log-content').textContent = 'Error loading log: ' + error.message;
+                    });
+                },
+                
+                copyToClipboard: function() {
+                    const content = document.getElementById('okvir-log-content').textContent;
+                    navigator.clipboard.writeText(content).then(() => {
+                        const status = document.getElementById('okvir-copy-status');
+                        status.textContent = '✓ Copied to clipboard!';
+                        setTimeout(() => {
+                            status.textContent = '';
+                        }, 3000);
+                    }).catch(err => {
+                        // Fallback for older browsers
+                        const textArea = document.createElement('textarea');
+                        textArea.value = content;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        try {
+                            document.execCommand('copy');
+                            const status = document.getElementById('okvir-copy-status');
+                            status.textContent = '✓ Copied to clipboard!';
+                            setTimeout(() => {
+                                status.textContent = '';
+                            }, 3000);
+                        } catch (err) {
+                            alert('Copy failed: ' + err);
+                        }
+                        document.body.removeChild(textArea);
+                    });
+                },
+                
+                closeModal: function() {
+                    this.modal.style.display = 'none';
+                }
+            };
+        });
+        </script>
+        
         <h2>Debug Logs</h2>
-        <p>Comprehensive debugging system for image conversion and resize operations.</p>
+        <p>Comprehensive debugging system for image conversion and resize operations. View, copy, and download log files directly from the interface.</p>
+        
+        <!-- Log Viewer Cards -->
+        <div class="okvir-log-buttons">
+            <?php foreach ($log_files as $log_key => $log_data): ?>
+                <div class="okvir-log-card">
+                    <h4><?php echo esc_html($log_data['name']); ?></h4>
+                    <p><?php echo esc_html($log_data['description']); ?></p>
+                    
+                    <div class="okvir-log-info">
+                        <?php if (file_exists($log_data['file'])): ?>
+                            <span style="color: #46b450;">✅ Available (<?php echo esc_html(size_format(filesize($log_data['file']))); ?>)</span>
+                            <span><?php echo esc_html(date('M j, Y g:i A', filemtime($log_data['file']))); ?></span>
+                        <?php else: ?>
+                            <span style="color: #d63638;">❌ No log file yet</span>
+                            <span>-</span>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <?php if (file_exists($log_data['file'])): ?>
+                        <button type="button" class="button button-primary" onclick="okvirLogViewer.openLogViewer('<?php echo esc_attr($log_key); ?>', '<?php echo esc_attr($log_data['name']); ?>')">
+                            👁️ View Log Contents
+                        </button>
+                    <?php else: ?>
+                        <button type="button" class="button button-secondary" disabled>
+                            Log file will appear after operations
+                        </button>
+                    <?php endif; ?>
+                    
+                    <div style="margin-top: 8px; font-size: 11px; color: #666;">
+                        <code><?php echo esc_html($log_data['file']); ?></code>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
         
         <div style="margin: 20px 0; padding: 15px; border-left: 4px solid #0073aa; background: #f0f8ff;">
             <h3>Enhanced Debug Logging is Now Active</h3>
-            <p>The plugin now includes comprehensive debug logging for all resize operations. Here's how to use it:</p>
-            
-            <ol>
-                <li><strong>Log Location:</strong> <code><?php echo esc_html($resize_log_file); ?></code></li>
-                <li><strong>Reproduce the Issue:</strong> Run batch processing to generate debug entries</li>
-                <li><strong>View Logs:</strong> Access the file directly or check WordPress error logs</li>
-                <li><strong>Share for Support:</strong> Copy the JSON log contents for troubleshooting</li>
-            </ol>
-            
             <p><strong>What's Being Logged:</strong></p>
             <ul>
                 <li>Every resize attempt with before/after file states</li>
@@ -3046,18 +3386,8 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 <li>File existence and size verification at each step</li>
                 <li>Metadata generation tracking</li>
                 <li>WordPress post update tracking</li>
+                <li>Dimension inconsistencies and validation errors</li>
             </ul>
-            
-            <?php if (file_exists($resize_log_file)): ?>
-                <div class="notice notice-success inline">
-                    <p><strong>✅ Debug log file exists</strong> - Recent resize operations have been logged.</p>
-                    <p><strong>File size:</strong> <?php echo esc_html(size_format(filesize($resize_log_file))); ?></p>
-                </div>
-            <?php else: ?>
-                <div class="notice notice-info inline">
-                    <p><strong>ℹ️ No debug log yet</strong> - The log will be created when resize operations occur.</p>
-                </div>
-            <?php endif; ?>
         </div>
         
         <div style="margin: 20px 0; padding: 15px; border: 1px solid #d63638; background: #ffeaea;">
@@ -3072,17 +3402,114 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             </ul>
         </div>
         
-        <div style="margin: 20px 0; padding: 15px; border: 1px solid #ffb900; background: #fff8e1;">
-            <h3>Next Steps for Debugging</h3>
-            <ol>
-                <li><strong>Run a Test:</strong> Process a few images using the Batch Processor</li>
-                <li><strong>Check the Log:</strong> Look for detailed entries in <code><?php echo esc_html($resize_log_file); ?></code></li>
-                <li><strong>Copy Log Contents:</strong> If issues persist, copy the entire JSON file contents</li>
-                <li><strong>Share for Analysis:</strong> Provide the log data for comprehensive troubleshooting</li>
-            </ol>
-        </div>
-        
         <?php
+    }
+    
+    /**
+     * AJAX handler for getting log file content
+     */
+    public function ajax_get_log_content() {
+        // Check nonce for security
+        if (!wp_verify_nonce($_POST['nonce'], 'okvir_log_viewer_nonce')) {
+            wp_die('Security check failed');
+        }
+        
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        
+        $log_type = sanitize_text_field($_POST['log_type']);
+        $upload_dir = wp_get_upload_dir();
+        
+        // Define log files
+        $log_files = [
+            'resize' => trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-resize-debug.json',
+            'errors' => trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-conversion-errors.json',
+            'dimensions' => trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-dimension-inconsistencies.json'
+        ];
+        
+        if (!isset($log_files[$log_type])) {
+            wp_send_json_error(['message' => 'Invalid log type']);
+        }
+        
+        $log_file = $log_files[$log_type];
+        
+        if (!file_exists($log_file)) {
+            wp_send_json_error(['message' => 'Log file does not exist']);
+        }
+        
+        // Read file content
+        $content = @file_get_contents($log_file);
+        if ($content === false) {
+            wp_send_json_error(['message' => 'Failed to read log file']);
+        }
+        
+        // Format JSON content for better readability
+        if ($log_type !== 'raw') {
+            $json_data = json_decode($content, true);
+            if ($json_data !== null) {
+                $content = json_encode($json_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            }
+        }
+        
+        // Create download URL
+        $filename = basename($log_file);
+        $download_url = admin_url('admin-ajax.php?action=okvir_download_log&log_type=' . $log_type . '&nonce=' . wp_create_nonce('okvir_log_download_nonce'));
+        
+        wp_send_json_success([
+            'content' => $content,
+            'filename' => $filename,
+            'download_url' => $download_url,
+            'file_size' => size_format(strlen($content))
+        ]);
+    }
+    
+    /**
+     * AJAX handler for downloading log files
+     */
+    public function ajax_download_log() {
+        // Check nonce for security
+        if (!wp_verify_nonce($_GET['nonce'], 'okvir_log_download_nonce')) {
+            wp_die('Security check failed');
+        }
+        
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+        
+        $log_type = sanitize_text_field($_GET['log_type']);
+        $upload_dir = wp_get_upload_dir();
+        
+        // Define log files
+        $log_files = [
+            'resize' => trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-resize-debug.json',
+            'errors' => trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-conversion-errors.json',
+            'dimensions' => trailingslashit($upload_dir['basedir']) . 'okvir-image-migrator-dimension-inconsistencies.json'
+        ];
+        
+        if (!isset($log_files[$log_type])) {
+            wp_die('Invalid log type');
+        }
+        
+        $log_file = $log_files[$log_type];
+        
+        if (!file_exists($log_file)) {
+            wp_die('Log file does not exist');
+        }
+        
+        $filename = basename($log_file);
+        
+        // Set headers for file download
+        header('Content-Type: application/json');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . filesize($log_file));
+        header('Cache-Control: private');
+        
+        // Output file content
+        readfile($log_file);
+        exit;
     }
     
     /**
@@ -3658,27 +4085,35 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 }
                 
                 // Function to handle progress bar completion
-                function markProcessingComplete(progressBarId, progressTextId, completionMessageId, stats) {
+                function markProcessingComplete(progressBarId, progressTextId, completionMessageId, stats, customTitle) {
                     const progressBar = $(progressBarId);
                     const progressText = $(progressTextId);
                     const completionMessage = $(completionMessageId);
                     
                     // Animate progress bar to completion state
                     progressBar.addClass('progress-complete');
-                    progressText.html('<span style="color: #00a32a; font-weight: bold;">✅ Processing Complete!</span>');
                     
-                    // Create completion message
+                    // Determine if this is reprocessing or batch processing
+                    const isReprocessing = progressBarId.includes('reprocess');
+                    const defaultTitle = isReprocessing ? 'Error Reprocessing Successfully Completed!' : 'Batch Processing Successfully Completed!';
+                    const title = customTitle || defaultTitle;
+                    
+                    const statusText = isReprocessing ? '✅ Reprocessing Complete!' : '✅ Processing Complete!';
+                    progressText.html('<span style="color: #00a32a; font-weight: bold;">' + statusText + '</span>');
+                    
+                    // Create completion message with appropriate content
                     const completionHtml = `
                         <div class="completion-message">
                             <div class="completion-title">
                                 <span class="completion-icon">🎉</span>
-                                <strong>Batch Processing Successfully Completed!</strong>
+                                <strong>${title}</strong>
                             </div>
                             <div class="completion-stats">
-                                <strong>Total Processed:</strong> ${stats.processed || 0} images<br>
+                                <strong>Total ${isReprocessing ? 'Reprocessed' : 'Processed'}:</strong> ${stats.processed || 0} images<br>
                                 <strong>Successful:</strong> ${stats.successful || 0} | 
                                 <strong>Errors:</strong> ${stats.errors || 0}<br>
                                 ${stats.duration ? `<strong>Duration:</strong> ${stats.duration}` : ''}
+                                ${isReprocessing && stats.successful > 0 ? '<br><span style="color: #00a32a; font-weight: bold;">🔧 Errors Fixed Successfully!</span>' : ''}
                             </div>
                         </div>
                     `;
@@ -4034,7 +4469,22 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                         reprocessGracefulStopInProgress = false;
                         $('#start-reprocess').show().text('Start Reprocessing');
                         $('#stop-reprocess').hide().prop('disabled', false).text('Stop');
-                        $('#reprocess-progress-text').text('Reprocessing complete!');
+                        
+                        // Calculate duration
+                        var endTime = Date.now();
+                        var duration = Math.round((endTime - reprocessStartTime) / 1000);
+                        var durationText = duration > 60 ? 
+                            Math.floor(duration / 60) + 'm ' + (duration % 60) + 's' : 
+                            duration + 's';
+                        
+                        // Mark as complete with enhanced styling
+                        markProcessingComplete('#reprocess-progress-bar', '#reprocess-progress-text', '#reprocess-completion-message', {
+                            processed: totalReprocessed,
+                            successful: totalFixed,
+                            errors: totalStillErrors,
+                            duration: durationText
+                        });
+                        
                         return;
                     }
                     
@@ -4169,6 +4619,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                     totalFixed = 0;
                     totalStillErrors = 0;
                     currentIndex = 0;
+                    reprocessStartTime = Date.now(); // Track start time for duration calculation
+                    
+                    // Reset progress bar to initial state
+                    resetProgressBar('#reprocess-progress-bar', '#reprocess-progress-text', '#reprocess-completion-message', 'Reprocessing...');
                     
                     $(this).hide();
                     $('#stop-reprocess').show().prop('disabled', false).text('Stop');
