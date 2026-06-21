@@ -1627,7 +1627,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 'target_format' => $target_format,
                 'target_path' => $new_path,
                 'exception_class' => get_class($e)
-            ]);
+            ], $e);
             update_post_meta($att_id, self::STATUS_META, 'convert_failed');
             return false;
         }
@@ -1755,7 +1755,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 $this->log_conversion_error($att_id, 'Bounding box resize exception: ' . $e->getMessage(), 'bounding_box_resize', [
                     'exception_class' => get_class($e),
                     'exception_trace' => $e->getTraceAsString()
-                ]);
+                ], $e);
                 // Don't return false here - continue without resize
             }
         }
@@ -1853,7 +1853,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             $this->log_conversion_error($att_id, 'Failed to build URL mapping: ' . $e->getMessage(), 'url_mapping', [
                 'old_meta' => $old_meta,
                 'new_meta' => $new_meta
-            ]);
+            ], $e);
             // Clean up converted file and preserve original
             @unlink($new_path);
             return false;
@@ -1865,7 +1865,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         } catch (Exception $e) {
             $this->log_conversion_error($att_id, 'Failed to update database references: ' . $e->getMessage(), 'database_update', [
                 'map_count' => count($map ?? [])
-            ]);
+            ], $e);
             // Clean up converted file and preserve original
             @unlink($new_path);
             return false;
@@ -1994,7 +1994,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             $this->log_conversion_error($att_id, 'Failed to handle original files: ' . $e->getMessage(), 'file_cleanup', [
                 'backup_dir' => $backup_dir,
                 'validation_mode' => $validation_mode
-            ]);
+            ], $e);
             // Don't return false here - conversion was successful, just cleanup failed
             error_log('WebP Migrator: File cleanup failed for attachment #' . $att_id . ', but conversion completed successfully');
         }
@@ -2089,6 +2089,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             $image = $this->load_image_gd($src);
             if ($image) {
                 $result = imagewebp($image, $dest, $quality);
+                if (!$result) {
+                    error_log('WebP Migrator: GD imagewebp failed for ' . $src . ' - Quality: ' . $quality . ', File exists after: ' . (file_exists($dest) ? 'yes' : 'no'));
+                }
                 imagedestroy($image);
                 return $result;
             }
@@ -2100,8 +2103,16 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 $imagick = new Imagick($src);
                 $imagick->setImageFormat('webp');
                 $imagick->setImageCompressionQuality($quality);
-                return $imagick->writeImage($dest);
+                $result = $imagick->writeImage($dest);
+                $imagick->clear();
+                $imagick->destroy();
+                return $result;
+            } catch (ImagickException $e) {
+                error_log('WebP Migrator: Imagick WebP conversion failed for ' . $src . ' - ' . get_class($e) . ': ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+                error_log('WebP Migrator: Imagick trace: ' . $e->getTraceAsString());
+                return false;
             } catch (Exception $e) {
+                error_log('WebP Migrator: Imagick WebP conversion general exception for ' . $src . ' - ' . get_class($e) . ': ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
                 return false;
             }
         }
@@ -2115,6 +2126,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             $image = $this->load_image_gd($src);
             if ($image) {
                 $result = imageavif($image, $dest, $quality, $speed);
+                if (!$result) {
+                    error_log('WebP Migrator: GD imageavif failed for ' . $src . ' - Quality: ' . $quality . ', Speed: ' . $speed);
+                }
                 imagedestroy($image);
                 return $result;
             }
@@ -2128,8 +2142,16 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 $imagick->setImageCompressionQuality($quality);
                 // AVIF-specific options
                 $imagick->setOption('avif:compression-speed', $speed);
-                return $imagick->writeImage($dest);
+                $result = $imagick->writeImage($dest);
+                $imagick->clear();
+                $imagick->destroy();
+                return $result;
+            } catch (ImagickException $e) {
+                error_log('WebP Migrator: Imagick AVIF conversion failed for ' . $src . ' - ' . get_class($e) . ': ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+                error_log('WebP Migrator: Imagick AVIF trace: ' . $e->getTraceAsString());
+                return false;
             } catch (Exception $e) {
+                error_log('WebP Migrator: Imagick AVIF conversion general exception for ' . $src . ' - ' . get_class($e) . ': ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
                 return false;
             }
         }
@@ -2145,8 +2167,16 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 $imagick->setImageFormat('jxl');
                 $imagick->setImageCompressionQuality($quality);
                 $imagick->setOption('jxl:effort', $effort);
-                return $imagick->writeImage($dest);
+                $result = $imagick->writeImage($dest);
+                $imagick->clear();
+                $imagick->destroy();
+                return $result;
+            } catch (ImagickException $e) {
+                error_log('WebP Migrator: Imagick JXL conversion failed for ' . $src . ' - ' . get_class($e) . ': ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+                error_log('WebP Migrator: Imagick JXL trace: ' . $e->getTraceAsString());
+                return false;
             } catch (Exception $e) {
+                error_log('WebP Migrator: Imagick JXL conversion general exception for ' . $src . ' - ' . get_class($e) . ': ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
                 return false;
             }
         }
@@ -2405,13 +2435,27 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         $entry = [
             'timestamp' => $timestamp,
             'timestamp_unix' => $timestamp_unix,
+            'timestamp_iso' => date('c'),
             'attachment_id' => $att_id,
             'attachment_title' => $attachment_title,
             'attached_file' => $attached_file,
             'message' => $message,
             'context' => $context,
-            'memory_usage' => memory_get_usage(true),
-            'memory_peak' => memory_get_peak_usage(true)
+            'system_state' => [
+                'memory_usage' => memory_get_usage(true),
+                'memory_peak' => memory_get_peak_usage(true),
+                'memory_limit' => ini_get('memory_limit'),
+                'max_execution_time' => ini_get('max_execution_time'),
+                'disk_free_space' => disk_free_space('.'),
+                'php_version' => phpversion(),
+                'wp_version' => get_bloginfo('version')
+            ],
+            'image_processing_environment' => [
+                'gd_available' => extension_loaded('gd'),
+                'imagick_available' => class_exists('Imagick'),
+                'gd_info' => function_exists('gd_info') ? gd_info() : null,
+                'last_error' => error_get_last()
+            ]
         ];
         
         // Load existing log
@@ -2523,9 +2567,12 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     /**
      * Log conversion error to JSON file and post meta with error count tracking
      */
-    private function log_conversion_error($att_id, $error_message, $step = '', $additional_data = []) {
+    private function log_conversion_error($att_id, $error_message, $step = '', $additional_data = [], $exception = null) {
         $current_time = current_time('mysql');
         $current_unix = time();
+        
+        // Capture comprehensive error details
+        $enhanced_error_data = $this->capture_detailed_error_context($error_message, $step, $additional_data, $exception);
         
         // Store error in post meta for quick access
         $error_data = [
@@ -2533,7 +2580,8 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             'step' => $step,
             'timestamp' => $current_time,
             'timestamp_unix' => $current_unix,
-            'additional_data' => $additional_data
+            'additional_data' => $additional_data,
+            'detailed_error_info' => $enhanced_error_data
         ];
         update_post_meta($att_id, self::ERROR_META, wp_json_encode($error_data));
         
@@ -2563,7 +2611,8 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 'error_count' => ($existing_entry['error_count'] ?? 1) + 1,
                 'target_format' => $this->settings['target_format'] ?? 'webp',
                 'quality' => $this->settings['quality'] ?? 75,
-                'additional_data' => $additional_data
+                'additional_data' => $additional_data,
+                'detailed_error_info' => $enhanced_error_data
             ]);
         } else {
             // Create new comprehensive log entry
@@ -2581,7 +2630,8 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
                 'last_error_timestamp' => $current_time,
                 'last_error_timestamp_unix' => $current_unix,
                 'error_count' => 1,
-                'additional_data' => $additional_data
+                'additional_data' => $additional_data,
+                'detailed_error_info' => $enhanced_error_data
             ];
         }
         
@@ -2716,19 +2766,154 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         ));
     }
     
+    /**
+     * Comprehensive error context capture for detailed debugging
+     */
+    private function capture_detailed_error_context($error_message, $step, $additional_data, $exception = null) {
+        $context = [
+            'error_details' => [
+                'message' => $error_message,
+                'step' => $step,
+                'timestamp_iso' => date('c'),
+                'php_sapi' => php_sapi_name()
+            ],
+            'exception_info' => null,
+            'system_state' => [
+                'php_version' => phpversion(),
+                'wp_version' => get_bloginfo('version'),
+                'memory_limit' => ini_get('memory_limit'),
+                'max_execution_time' => ini_get('max_execution_time'),
+                'upload_max_filesize' => ini_get('upload_max_filesize'),
+                'post_max_size' => ini_get('post_max_size'),
+                'memory_usage' => [
+                    'current' => memory_get_usage(true),
+                    'peak' => memory_get_peak_usage(true),
+                    'formatted_current' => size_format(memory_get_usage(true)),
+                    'formatted_peak' => size_format(memory_get_peak_usage(true))
+                ],
+                'disk_space' => [
+                    'total' => disk_total_space('.'),
+                    'free' => disk_free_space('.'),
+                    'used_percent' => round((1 - disk_free_space('.') / disk_total_space('.')) * 100, 2)
+                ]
+            ],
+            'image_library_info' => [
+                'gd_available' => extension_loaded('gd'),
+                'gd_info' => function_exists('gd_info') ? gd_info() : null,
+                'imagick_available' => class_exists('Imagick'),
+                'imagick_version' => class_exists('Imagick') ? (method_exists('Imagick', 'getVersion') ? Imagick::getVersion() : 'version_unknown') : null,
+                'supported_formats' => [
+                    'webp_gd' => function_exists('imagewebp'),
+                    'avif_gd' => function_exists('imageavif'),
+                    'jpeg_gd' => function_exists('imagecreatefromjpeg'),
+                    'png_gd' => function_exists('imagecreatefrompng'),
+                    'gif_gd' => function_exists('imagecreatefromgif')
+                ]
+            ],
+            'wp_environment' => [
+                'is_multisite' => is_multisite(),
+                'wp_debug' => defined('WP_DEBUG') ? WP_DEBUG : false,
+                'wp_debug_log' => defined('WP_DEBUG_LOG') ? WP_DEBUG_LOG : false,
+                'wp_debug_display' => defined('WP_DEBUG_DISPLAY') ? WP_DEBUG_DISPLAY : false,
+                'active_theme' => wp_get_theme()->get('Name'),
+                'locale' => get_locale()
+            ],
+            'plugin_settings' => [
+                'target_format' => $this->settings['target_format'] ?? 'unknown',
+                'quality' => $this->settings['quality'] ?? 'unknown',
+                'enable_bounding_box' => !empty($this->settings['enable_bounding_box']),
+                'bounding_box_dimensions' => [
+                    'width' => $this->settings['bounding_box_width'] ?? 'not_set',
+                    'height' => $this->settings['bounding_box_height'] ?? 'not_set'
+                ]
+            ],
+            'request_context' => [
+                'is_ajax' => wp_doing_ajax(),
+                'is_cron' => wp_doing_cron(),
+                'is_cli' => defined('WP_CLI') && WP_CLI,
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
+                'request_uri' => $_SERVER['REQUEST_URI'] ?? 'unknown'
+            ]
+        ];
+
+        // Capture exception details with full stack trace
+        if ($exception instanceof Throwable) {
+            $context['exception_info'] = [
+                'class' => get_class($exception),
+                'message' => $exception->getMessage(),
+                'code' => $exception->getCode(),
+                'file' => $exception->getFile(),
+                'line' => $exception->getLine(),
+                'trace' => $exception->getTraceAsString(),
+                'trace_array' => $exception->getTrace(),
+                'previous' => null
+            ];
+
+            // Capture previous exceptions if they exist
+            if ($previous = $exception->getPrevious()) {
+                $context['exception_info']['previous'] = [
+                    'class' => get_class($previous),
+                    'message' => $previous->getMessage(),
+                    'code' => $previous->getCode(),
+                    'file' => $previous->getFile(),
+                    'line' => $previous->getLine(),
+                    'trace' => $previous->getTraceAsString()
+                ];
+            }
+        }
+
+        // Capture last PHP error if available
+        $last_error = error_get_last();
+        if ($last_error && (time() - $last_error['timestamp'] ?? 0) < 5) {
+            $context['last_php_error'] = $last_error;
+        }
+
+        // Merge with additional data provided
+        if (!empty($additional_data)) {
+            $context['additional_context'] = $additional_data;
+        }
+
+        return $context;
+    }
+
     private function load_image_gd($src) {
         $info = getimagesize($src);
-        if (!$info) return false;
+        if (!$info) {
+            // Capture detailed error context for failed getimagesize
+            error_log('WebP Migrator: getimagesize failed for ' . $src . ' - File exists: ' . (file_exists($src) ? 'yes' : 'no') . ', File size: ' . (file_exists($src) ? filesize($src) : 'N/A'));
+            return false;
+        }
         
-        switch ($info['mime']) {
-            case 'image/jpeg':
-                return imagecreatefromjpeg($src);
-            case 'image/png':
-                return imagecreatefrompng($src);
-            case 'image/gif':
-                return imagecreatefromgif($src);
-            default:
-                return false;
+        try {
+            switch ($info['mime']) {
+                case 'image/jpeg':
+                    $image = imagecreatefromjpeg($src);
+                    if (!$image) {
+                        error_log('WebP Migrator: imagecreatefromjpeg failed for ' . $src . ' - MIME: ' . $info['mime'] . ', Dimensions: ' . $info[0] . 'x' . $info[1]);
+                    }
+                    return $image;
+                    
+                case 'image/png':
+                    $image = imagecreatefrompng($src);
+                    if (!$image) {
+                        error_log('WebP Migrator: imagecreatefrompng failed for ' . $src . ' - MIME: ' . $info['mime'] . ', Dimensions: ' . $info[0] . 'x' . $info[1]);
+                    }
+                    return $image;
+                    
+                case 'image/gif':
+                    $image = imagecreatefromgif($src);
+                    if (!$image) {
+                        error_log('WebP Migrator: imagecreatefromgif failed for ' . $src . ' - MIME: ' . $info['mime'] . ', Dimensions: ' . $info[0] . 'x' . $info[1]);
+                    }
+                    return $image;
+                    
+                default:
+                    error_log('WebP Migrator: Unsupported MIME type for GD conversion: ' . $info['mime'] . ' for file ' . $src);
+                    return false;
+            }
+        } catch (Throwable $e) {
+            error_log('WebP Migrator: GD image load exception for ' . $src . ' - ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+            return false;
         }
     }
 
