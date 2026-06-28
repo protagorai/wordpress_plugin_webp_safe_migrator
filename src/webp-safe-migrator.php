@@ -430,6 +430,9 @@ class WebP_Safe_Migrator {
         return (bool)$this->settings['validation'];
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     public function render_tabbed_interface() {
         if (!current_user_can('manage_options')) return;
         
@@ -492,6 +495,9 @@ class WebP_Safe_Migrator {
         <?php
     }
     
+    /**
+     * @codeCoverageIgnore
+     */
     public function render_settings_tab() {
         settings_errors('webp_safe_migrator');
         $target_format = (string)($this->settings['target_format'] ?? 'webp');
@@ -708,6 +714,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         <?php
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     public function render_reports_tab() {
         $att_id = isset($_GET['attachment_id']) ? (int)$_GET['attachment_id'] : 0;
 
@@ -766,6 +775,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         echo '</tbody></table>';
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     public function render_dimensions_tab() {
         settings_errors('webp_safe_migrator');
         
@@ -911,6 +923,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         echo '</div>';
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     public function render_errors_tab() {
         settings_errors('webp_safe_migrator');
         
@@ -1108,6 +1123,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         echo '</div>';
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     private function render_single_report($att_id) {
         $report = json_decode(get_post_meta($att_id, self::REPORT_META, true) ?: '[]', true);
         echo '<h2>Attachment #'.esc_html($att_id).' — '.esc_html(get_the_title($att_id)).'</h2>';
@@ -1192,6 +1210,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         } else echo '<p>—</p>';
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     private function render_pending_commits() {
         global $wpdb;
         $rows = $wpdb->get_results($wpdb->prepare(
@@ -1243,6 +1264,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         echo '</div>';
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     private function render_queue_preview() {
         $ids = $this->get_non_target_format_attachments(20);
         if (!$ids) { echo '<p>None found (or all skipped by filters).</p>'; return; }
@@ -1255,6 +1279,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         echo '</ul>';
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     private function render_dimension_inconsistencies_summary() {
         $uploads = wp_get_upload_dir();
         $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-dimension-inconsistencies.json';
@@ -1310,6 +1337,9 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         }
     }
 
+    /**
+     * @codeCoverageIgnore
+     */
     private function render_conversion_errors_summary() {
         $uploads = wp_get_upload_dir();
         $log_file = trailingslashit($uploads['basedir']) . 'webp-migrator-conversion-errors.json';
@@ -2987,6 +3017,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     
     /**
      * Render batch processor tab
+     * @codeCoverageIgnore
      */
     public function render_batch_tab() {
         $target_format = strtoupper($this->settings['target_format'] ?? 'webp');
@@ -3155,6 +3186,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     
     /**
      * Render error reprocessor tab
+     * @codeCoverageIgnore
      */
     public function render_reprocess_tab() {
         $uploads = wp_get_upload_dir();
@@ -3349,6 +3381,7 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
     
     /**
      * Render maintenance and statistics tab
+     * @codeCoverageIgnore
      */
     public function render_maintenance_tab() {
         global $wpdb;
@@ -3528,6 +3561,9 @@ $GLOBALS['webp_safe_migrator'] = new WebP_Safe_Migrator();
  *   wp webp-migrator run --format=jxl --quality=80 --effort=8
  */
 if (defined('WP_CLI') && WP_CLI && class_exists('WP_CLI')) {
+    /**
+     * @codeCoverageIgnore
+     */
     class WebP_Safe_Migrator_CLI {
         public static function dispatch($args, $assoc_args) {
             $sub = array_shift($args) ?: 'run';

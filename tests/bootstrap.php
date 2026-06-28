@@ -61,6 +61,23 @@ tests_add_filter('pre_http_request', function () {
     return new WP_Error('http_request_blocked', 'External HTTP disabled during tests');
 });
 
+// Short-circuit WordPress core/plugin/theme update checks so they never attempt
+// (now-blocked) HTTP to wordpress.org. Returning a fresh transient object makes
+// wp_version_check()/wp_update_plugins()/wp_update_themes() bail before any request
+// (otherwise they emit a notice that PHPUnit converts into a test error).
+$_webp_no_update_check = function () {
+    return (object) [
+        'last_checked'    => time(),
+        'version_checked' => $GLOBALS['wp_version'] ?? '',
+        'updates'         => [],
+        'response'        => [],
+        'translations'    => [],
+    ];
+};
+tests_add_filter('pre_site_transient_update_core', $_webp_no_update_check);
+tests_add_filter('pre_site_transient_update_plugins', $_webp_no_update_check);
+tests_add_filter('pre_site_transient_update_themes', $_webp_no_update_check);
+
 // Boot the WordPress test environment.
 require $wp_tests_dir . '/includes/bootstrap.php';
 

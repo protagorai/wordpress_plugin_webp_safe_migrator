@@ -49,6 +49,9 @@ tmp/
 temp/
 *.tmp
 
+# Windows reserved-name artifact (created by stray NUL redirects on Git Bash)
+NUL
+
 # Node modules (if using any Node.js tools)
 node_modules/
 
