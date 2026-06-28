@@ -55,6 +55,11 @@ node_modules/
 # Composer vendor (if using Composer)
 vendor/
 
+# Test + coverage artifacts
+build/
+coverage/
+.phpunit.result.cache
+
 # Package files
 *.zip
 *.tar.gz

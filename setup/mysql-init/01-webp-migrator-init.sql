@@ -1,24 +1,17 @@
--- WebP Safe Migrator - MySQL Initialization Script
--- This script sets up the database with proper configuration for the plugin
+-- WebP Safe Migrator - MySQL initialisation for the development app stack.
+--
+-- The application database itself is created automatically by the MySQL image
+-- from the MYSQL_DATABASE environment variable (see setup/docker/docker-compose.yml,
+-- default: `wordpress`). This script only applies safe, idempotent tuning to that
+-- database. If you override WORDPRESS_DB_NAME, update the database name below to match.
+--
+-- NOTE: This file intentionally does NOT touch mysql.general_log and does NOT
+-- reference a separate test database; both caused init failures previously
+-- (see review.md CRIT-7). Integration tests use their own throwaway database
+-- (setup/docker/docker-compose.test.yml), not this stack.
 
--- Ensure UTF8MB4 support for full Unicode compatibility
-ALTER DATABASE wordpress_webp_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- Ensure full Unicode support on the WordPress database.
+ALTER DATABASE `wordpress` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- Create additional user for plugin testing (optional)
-CREATE USER IF NOT EXISTS 'webp_test'@'%' IDENTIFIED BY 'webp_test123';
-GRANT ALL PRIVILEGES ON wordpress_webp_test.* TO 'webp_test'@'%';
-
--- Optimize MySQL settings for development
+-- Allow large serialized option / postmeta writes during big migrations.
 SET GLOBAL max_allowed_packet = 67108864; -- 64MB
-SET GLOBAL innodb_buffer_pool_size = 268435456; -- 256MB
-
--- Create indexes for better performance (WordPress will create these, but good to have)
--- These will be created by WordPress, but we can prepare for them
-
--- Log the initialization
-INSERT INTO mysql.general_log (event_time, user_host, thread_id, server_id, command_type, argument)
-VALUES (NOW(), 'webp-migrator-init', 0, 1, 'Query', 'WebP Safe Migrator database initialized')
-ON DUPLICATE KEY UPDATE argument = 'WebP Safe Migrator database re-initialized';
-
--- Flush privileges to ensure all changes take effect
-FLUSH PRIVILEGES;

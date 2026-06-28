@@ -77,9 +77,12 @@ class WebP_Test_Helper {
         $gif_data = ob_get_contents();
         ob_end_clean();
         
-        // Add NETSCAPE2.0 extension to make it appear animated
+        // Add NETSCAPE2.0 extension to make it appear animated. PHP's imagegif()
+        // may emit either a 'GIF87a' or 'GIF89a' header, so match both and always
+        // rewrite to 'GIF89a' (required for the application extension) with the
+        // marker injected right after it.
         $animated_marker = "NETSCAPE2.0\x03\x01\x00\x00\x00";
-        $gif_data = str_replace("GIF89a", "GIF89a" . $animated_marker, $gif_data);
+        $gif_data = preg_replace('/^GIF8[79]a/', 'GIF89a' . $animated_marker, $gif_data, 1);
         
         file_put_contents($filepath, $gif_data);
         imagedestroy($image);

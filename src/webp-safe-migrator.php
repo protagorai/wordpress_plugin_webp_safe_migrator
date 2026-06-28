@@ -86,6 +86,18 @@ class WebP_Safe_Migrator {
         $this->runtime_validation_override = (bool)$validate_mode_bool;
     }
 
+    /**
+     * Public runtime accessors so external callers (e.g. the WP-CLI handler, which
+     * is a separate class) can read/override settings without touching the private
+     * $settings property directly (doing so is a fatal "cannot access private property").
+     */
+    public function set_setting($key, $value): void {
+        $this->settings[$key] = $value;
+    }
+    public function get_setting($key, $default = null) {
+        return $this->settings[$key] ?? $default;
+    }
+
     public function on_activate() {
         // Simplified activation check - avoid complex format detection during activation
         if (!function_exists('imagewebp') && !class_exists('Imagick')) {
@@ -1543,8 +1555,11 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         $target_format = $this->settings['target_format'] ?? 'webp';
         $target_ext = self::SUPPORTED_TARGET_FORMATS[$target_format]['ext'] ?? 'webp';
         
-        $old_rel      = $old_meta['file'];                                   // '2025/08/image.jpg'
-        $old_dir_rel  = trailingslashit(dirname($old_rel));
+        $old_rel      = $old_meta['file'];                                   // '2025/08/image.jpg' or 'image.jpg'
+        $old_dir      = dirname($old_rel);
+        // dirname() returns '.' for files in the uploads root (when WP's month/year
+        // folders are disabled); turn that into '' so paths/URLs don't get a '/./'.
+        $old_dir_rel  = ($old_dir === '.' || $old_dir === '') ? '' : trailingslashit($old_dir);
         $old_basename = wp_basename($old_rel);
         $new_rel      = $old_dir_rel . preg_replace('/\.\w+$/', '.' . $target_ext, $old_basename);
         $new_path     = trailingslashit($uploads['basedir']) . $new_rel;
@@ -1932,10 +1947,10 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         
         // Common patterns for dimensions in filenames
         $patterns = [
-            '/(\d{2,5})[x×](\d{2,5})(?:\D|$)/i',        // 1920x1080, 150×150
-            '/-(\d{2,5})[x×](\d{2,5})(?:\D|$)/i',       // -1920x1080
-            '/_(\d{2,5})[x×](\d{2,5})(?:\D|$)/i',       // _1920x1080
-            '/[\s-_](\d{2,5})[x×](\d{2,5})$/i',         // ending with -1920x1080
+            '/(\d{2,5})[xX\x{00D7}](\d{2,5})(?:\D|$)/iu',        // 1920x1080, 150×150
+            '/-(\d{2,5})[xX\x{00D7}](\d{2,5})(?:\D|$)/iu',       // -1920x1080
+            '/_(\d{2,5})[xX\x{00D7}](\d{2,5})(?:\D|$)/iu',       // _1920x1080
+            '/[\s\-_](\d{2,5})[xX\x{00D7}](\d{2,5})$/iu',        // ending with -1920x1080
         ];
         
         foreach ($patterns as $pattern) {
@@ -2222,8 +2237,12 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
         $new_orig_rel = $new_meta['file'];
         $map[$uploads['baseurl'].'/'.$old_orig_rel] = $uploads['baseurl'].'/'.$new_orig_rel;
 
-        $old_dir_rel = trailingslashit(dirname($old_orig_rel));
-        $new_dir_rel = trailingslashit(dirname($new_orig_rel));
+        // Normalize the directory prefix: dirname() yields '.' for uploads-root files
+        // (month/year folders disabled), which would inject a '/./' into every URL.
+        $old_dir = dirname($old_orig_rel);
+        $new_dir = dirname($new_orig_rel);
+        $old_dir_rel = ($old_dir === '.' || $old_dir === '') ? '' : trailingslashit($old_dir);
+        $new_dir_rel = ($new_dir === '.' || $new_dir === '') ? '' : trailingslashit($new_dir);
 
         $old_sizes = isset($old_meta['sizes']) && is_array($old_meta['sizes']) ? $old_meta['sizes'] : [];
         $new_sizes = isset($new_meta['sizes']) && is_array($new_meta['sizes']) ? $new_meta['sizes'] : [];
@@ -2383,7 +2402,11 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             $new_value = $this->deep_replace($value, $url_map);
             if ($new_value !== $value) {
                 $update = $update_closure_factory($row);
-                $update(maybe_serialize($new_value));
+                // Pass the RAW value: update_post_meta()/update_option()/update_user_meta()/
+                // update_term_meta() all serialize internally, so calling maybe_serialize()
+                // here double-serializes arrays/objects (and serialized-looking strings),
+                // which then come back as raw serialized strings on read. (Caught by tests.)
+                $update($new_value);
                 $on_changed_row($row);
             }
         }
@@ -2531,9 +2554,15 @@ private-uploads"><?php echo esc_textarea($skip_folders); ?></textarea>
             // CRITICAL: Reverse database URL changes using stored mapping
             $conversion_report = json_decode(get_post_meta($att_id, self::REPORT_META, true) ?: '{}', true);
             if (!empty($conversion_report['url_map'])) {
-                // Create reverse mapping (new → old)
-                $reverse_map = array_flip($conversion_report['url_map']);
-                
+                // Create reverse mapping (new → old), skipping identity pairs.
+                // build_url_map() adds extension-swap entries that can be identities
+                // (e.g. webp_url => webp_url); array_flip() would collapse duplicate
+                // values and lose the genuine jpg_url => webp_url mapping.
+                $reverse_map = [];
+                foreach ($conversion_report['url_map'] as $old => $new) {
+                    if ($old !== $new) { $reverse_map[$new] = $old; }
+                }
+
                 // Reverse all database changes
                 $this->replace_everywhere($reverse_map);
             }
@@ -3540,12 +3569,12 @@ if (defined('WP_CLI') && WP_CLI && class_exists('WP_CLI')) {
 
             // Override plugin target format for this run
             $original_format = $settings['target_format'] ?? 'webp';
-            $plugin->settings['target_format'] = $target_format;
-            $plugin->settings['quality'] = $quality;
-            
+            $plugin->set_setting('target_format', $target_format);
+            $plugin->set_setting('quality', $quality);
+
             // Apply format-specific settings
             foreach ($format_options as $key => $value) {
-                $plugin->settings[$target_format . '_' . $key] = $value;
+                $plugin->set_setting($target_format . '_' . $key, $value);
             }
 
             $plugin->set_runtime_validation($validate);
@@ -3563,7 +3592,7 @@ if (defined('WP_CLI') && WP_CLI && class_exists('WP_CLI')) {
                 WP_CLI::log(($ok ? 'OK   ' : 'SKIP')." #$id");
             }
             // Restore original format setting
-            $plugin->settings['target_format'] = $original_format;
+            $plugin->set_setting('target_format', $original_format);
             
             $format_details = '';
             if (!empty($format_options)) {

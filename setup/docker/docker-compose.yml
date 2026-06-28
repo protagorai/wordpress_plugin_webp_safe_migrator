@@ -11,9 +11,9 @@ services:
       - "443:443"
     environment:
       WORDPRESS_DB_HOST: db
-      WORDPRESS_DB_USER: wpuser
-      WORDPRESS_DB_PASSWORD: wppass
-      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER:-wpuser}
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD:-wppass}
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME:-wordpress}
       WORDPRESS_DEBUG: 1
       ENABLE_SSL: "true"
       WORDPRESS_CONFIG_EXTRA: |
@@ -53,10 +53,10 @@ services:
     image: mysql:8.0
     container_name: webp-migrator-mysql
     environment:
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wpuser
-      MYSQL_PASSWORD: wppass
-      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: ${WORDPRESS_DB_NAME:-wordpress}
+      MYSQL_USER: ${WORDPRESS_DB_USER:-wpuser}
+      MYSQL_PASSWORD: ${WORDPRESS_DB_PASSWORD:-wppass}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
     volumes:
       - db_data:/var/lib/mysql
       - ./mysql-init:/docker-entrypoint-initdb.d
@@ -64,7 +64,7 @@ services:
       - "3306:3306"
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot123"]
+      test: ["CMD", "sh", "-c", "mysqladmin ping -h localhost -u root -p\"${MYSQL_ROOT_PASSWORD:-root123}\""]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -79,7 +79,7 @@ services:
     environment:
       PMA_HOST: db
       PMA_USER: root
-      PMA_PASSWORD: root123
+      PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123}
       PMA_ARBITRARY: 1
     depends_on:
       - db

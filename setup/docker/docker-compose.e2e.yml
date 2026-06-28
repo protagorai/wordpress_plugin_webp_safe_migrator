@@ -1,0 +1,53 @@
+# End-to-end (live WordPress + WP-CLI) test stack for WebP Safe Migrator.
+#
+# Run:  bin/e2e.sh
+# or:   docker compose -f setup/docker/docker-compose.e2e.yml up -d --build
+#       docker compose -f setup/docker/docker-compose.e2e.yml exec wordpress bash /opt/scripts/e2e-tests.sh
+#
+# Self-contained and isolated from the dev app stack: in-memory DB (tmpfs),
+# its own port (8090), torn down with `down -v`.
+name: webp-migrator-e2e
+
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wp
+      MARIADB_PASSWORD: wp
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  wordpress:
+    build:
+      context: ../..
+      dockerfile: setup/docker/Dockerfile.e2e
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wp
+      WORDPRESS_DB_PASSWORD: wp
+      WORDPRESS_DB_NAME: wordpress
+      WP_URL: http://localhost:8090
+    ports:
+      - "8090:80"
+    volumes:
+      # Plugin under test (the main file lives in src/, mounted as the plugin dir).
+      - ../../src:/var/www/html/wp-content/plugins/webp-safe-migrator
+      # E2E fixtures + driver script (read-only).
+      - ../../tests/e2e:/opt/e2e:ro
+      - ../../setup/scripts:/opt/scripts:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/wp-login.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s

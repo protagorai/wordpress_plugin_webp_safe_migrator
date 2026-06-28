@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+    bootstrap="tests/bootstrap.php"
+    backupGlobals="false"
+    colors="true"
+    beStrictAboutTestsThatDoNotTestAnything="false"
+    convertErrorsToExceptions="true"
+    convertNoticesToExceptions="true"
+    convertWarningsToExceptions="true"
+    convertDeprecationsToExceptions="false">
+    <testsuites>
+        <testsuite name="unit">
+            <directory suffix=".php">tests/unit</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory suffix=".php">tests/integration</directory>
+        </testsuite>
+    </testsuites>
+
+    <!-- Line + branch/path coverage over ALL plugin PHP. Requires Xdebug in
+         coverage mode (XDEBUG_MODE=coverage). PCOV does not provide branches. -->
+    <coverage pathCoverage="true" processUncoveredFiles="true">
+        <include>
+            <directory suffix=".php">src</directory>
+            <directory suffix=".php">includes</directory>
+        </include>
+        <exclude>
+            <file>src/uninstall.php</file>
+        </exclude>
+        <report>
+            <clover outputFile="build/coverage/clover.xml"/>
+            <html outputDirectory="build/coverage/html"/>
+            <text outputFile="php://stdout" showUncoveredFiles="true" showOnlySummary="true"/>
+        </report>
+    </coverage>
+
+    <php>
+        <env name="WP_TESTS_DIR" value="/tmp/wordpress-tests-lib"/>
+    </php>
+</phpunit>

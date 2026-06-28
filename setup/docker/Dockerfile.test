@@ -1,0 +1,26 @@
+# WebP Safe Migrator - Integration test runner image.
+# PHP-CLI with the full image stack (GD built --with-avif + Imagick) so the
+# WebP/AVIF/JXL conversion paths are actually exercised by the test suite.
+FROM php:8.3-cli
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git unzip subversion ca-certificates default-mysql-client \
+        libwebp-dev libavif-dev libjpeg-dev libpng-dev libfreetype6-dev libheif-dev \
+        libonig-dev libzip-dev libmagickwand-dev \
+    && docker-php-ext-configure gd \
+        --with-freetype \
+        --with-jpeg \
+        --with-webp \
+        --with-avif \
+    && docker-php-ext-install -j"$(nproc)" gd exif mysqli mbstring zip \
+    && (pecl install imagick && docker-php-ext-enable imagick || echo "imagick unavailable; continuing with GD only") \
+    && (pecl install xdebug && docker-php-ext-enable xdebug || echo "xdebug unavailable; coverage disabled") \
+    && rm -rf /var/lib/apt/lists/*
+
+# Xdebug stays off unless XDEBUG_MODE=coverage is passed at runtime (keeps plain
+# test runs fast; coverage runs enable it). See bin/coverage.sh.
+ENV XDEBUG_MODE=off
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+WORKDIR /app

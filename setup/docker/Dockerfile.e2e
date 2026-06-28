@@ -1,0 +1,19 @@
+# WebP Safe Migrator - End-to-end test runner.
+#
+# A REAL WordPress (Apache) image + WP-CLI + the image libraries the plugin needs,
+# so we can install WordPress, activate the plugin, seed media, run a conversion,
+# and assert the result entirely from the command line against a live site.
+#
+# The official wordpress image already ships GD with WebP (and AVIF on recent
+# tags); the e2e test script preflights the encoder and fails fast if missing.
+FROM wordpress:php8.3-apache
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        curl ca-certificates less default-mysql-client; \
+    rm -rf /var/lib/apt/lists/*; \
+    curl -fsSL https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+        -o /usr/local/bin/wp; \
+    chmod +x /usr/local/bin/wp; \
+    wp --info --allow-root

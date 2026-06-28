@@ -1,0 +1,16 @@
+{
+  "name": "webp-safe-migrator",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Admin JS test + coverage harness for WebP Safe Migrator.",
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "test:js": "node --test tests/js",
+    "coverage": "c8 --reporter=text --reporter=lcov --report-dir=coverage --include=admin/js/admin.js node --test tests/js"
+  },
+  "devDependencies": {
+    "c8": "^9.1.0",
+    "jquery": "^3.7.1",
+    "jsdom": "^24.1.0"
+  }
+}

@@ -9,9 +9,9 @@ class Test_WebP_Migrator_Converter extends WP_UnitTestCase {
     private $test_image_path;
     private $test_attachment_id;
     
-    public function setUp(): void {
-        parent::setUp();
-        
+    public function set_up(): void {
+        parent::set_up();
+
         // Initialize converter
         $this->converter = new WebP_Migrator_Converter([
             'quality' => 75,
@@ -26,10 +26,10 @@ class Test_WebP_Migrator_Converter extends WP_UnitTestCase {
         $this->test_attachment_id = WebP_Test_Helper::create_test_attachment($this->test_image_path);
     }
     
-    public function tearDown(): void {
+    public function tear_down(): void {
         // Clean up test files
         WebP_Test_Helper::cleanup_test_files();
-        parent::tearDown();
+        parent::tear_down();
     }
     
     /**
@@ -49,14 +49,17 @@ class Test_WebP_Migrator_Converter extends WP_UnitTestCase {
         $this->assertArrayHasKey('old_meta', $result);
         $this->assertArrayHasKey('new_meta', $result);
         $this->assertArrayHasKey('conversion_stats', $result);
-        
-        // Check that new file is WebP
-        $new_file = get_attached_file($this->test_attachment_id);
-        $this->assertStringEndsWith('.webp', $new_file);
+
+        // convert_attachment() generates new WebP metadata but does NOT relink
+        // the attachment, so verify the generated metadata points to a .webp file.
+        $this->assertArrayHasKey('file', $result['new_meta']);
+        $this->assertStringEndsWith('.webp', $result['new_meta']['file']);
+
+        // The generated WebP file should exist on disk. Resolve its absolute
+        // path from the uploads basedir + the relative path in new_meta.
+        $uploads = wp_get_upload_dir();
+        $new_file = trailingslashit($uploads['basedir']) . $result['new_meta']['file'];
         $this->assertTrue(file_exists($new_file));
-        
-        // Check MIME type was updated
-        $this->assertEquals('image/webp', get_post_mime_type($this->test_attachment_id));
     }
     
     /**
@@ -97,11 +100,27 @@ class Test_WebP_Migrator_Converter extends WP_UnitTestCase {
      * Test skipping already converted WebP images
      */
     public function test_skip_already_webp() {
-        // First conversion
-        $this->converter->convert_attachment($this->test_attachment_id);
-        
-        // Second conversion should return true (already WebP)
-        $result = $this->converter->convert_attachment($this->test_attachment_id);
+        // convert_attachment() never relinks the attachment, so converting a
+        // JPEG twice would simply convert it again. To genuinely exercise the
+        // early-return (`$mime === 'image/webp'`) branch we need a real WebP
+        // attachment from the start.
+        if (!function_exists('imagewebp')) {
+            $this->markTestSkipped('WebP creation is not available in this environment.');
+        }
+
+        try {
+            $webp_path = WebP_Test_Helper::create_test_image(100, 100, 'webp');
+        } catch (Exception $e) {
+            $this->markTestSkipped('WebP creation is not available: ' . $e->getMessage());
+        }
+
+        $webp_attachment_id = WebP_Test_Helper::create_test_attachment($webp_path);
+
+        // Sanity check: the attachment really is a WebP.
+        $this->assertEquals('image/webp', get_post_mime_type($webp_attachment_id));
+
+        // Converting an already-WebP attachment should short-circuit and return true.
+        $result = $this->converter->convert_attachment($webp_attachment_id);
         $this->assertTrue($result);
     }
     

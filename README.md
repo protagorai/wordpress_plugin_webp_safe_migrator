@@ -2,6 +2,16 @@
 
 Convert all non-WebP images in your WordPress media library to WebP at a fixed quality, safely update all usages and metadata, then (optionally) remove originals after validation. Includes WP-CLI, skip rules, change reports, and advanced processing options.
 
+## ⚠️ Current Status & Limitations (v0.2.0)
+
+This plugin is a strong prototype under active hardening. Before relying on it in production, be aware of the following (full details and roadmap in [`review.md`](review.md)):
+
+- **Foreground batch conversion, validation/commit, and rollback work.** This is the recommended path today.
+- **Background (async) processing is being reworked.** The legacy WP-Cron queue is not currently functional; use the foreground batch processor or WP-CLI.
+- **AVIF / JPEG XL** require server support (GD `--with-avif` / Imagick with the relevant delegate). The admin UI only offers formats your server can actually produce. The provided Docker image now builds GD with AVIF.
+- **Testing:** a PHPUnit + container test harness is included (`bin/test.sh`, `composer test`). Unit coverage is partial and integration coverage is still being expanded.
+- **Always back up your database and uploads before a large migration**, and run with **validation mode ON** first.
+
 ## 📋 Table of Contents
 
 - [Quick Start](#quick-start)
@@ -48,7 +58,7 @@ Convert all non-WebP images in your WordPress media library to WebP at a fixed q
 - ✅ **Comprehensive Reports** - Detailed change tracking per attachment
 
 ### Advanced Features
-- 🔄 **Background Processing** - Async job queue for large libraries
+- 🔄 **Background Processing** - Async job queue for large libraries *(experimental — being reworked; see [review.md](review.md))*
 - 🎛️ **Advanced Options** - Size constraints, quality presets, selective transformations
 - 📊 **Real-time Progress** - Live progress bars and status updates
 - 🔍 **Enhanced Validation** - Comprehensive file and metadata verification
@@ -58,7 +68,7 @@ Convert all non-WebP images in your WordPress media library to WebP at a fixed q
 ### Technical Features
 - 🛡️ **Security** - Proper nonces, capability checks, input sanitization
 - ⚡ **Performance** - Memory-conscious processing, optimized database queries
-- 🧪 **Testing** - Complete unit and integration test suite
+- 🧪 **Testing** - PHPUnit + containerised test harness (unit tests included; integration coverage expanding)
 - 🔧 **WP-CLI Support** - Command-line automation for developers
 - 📱 **Responsive Design** - Mobile-friendly admin interface
 
@@ -290,16 +300,26 @@ wp webp-migrator stats
 **Key**: The `src/` directory is **volume-mounted** for instant code changes!
 
 ### Testing
+
+The fastest way to run the full suite is the containerised harness — it stands up
+MariaDB + a PHP-CLI container, installs the WordPress test library, and runs PHPUnit.
+No local PHP/MySQL needed (just Docker or Podman):
+
 ```bash
-# Run unit tests
-phpunit tests/unit/
-
-# Run integration tests
-phpunit tests/integration/
-
-# Run all tests
-phpunit
+./bin/test.sh
 ```
+
+To run locally instead (requires PHP, Composer, MySQL/MariaDB and Subversion):
+
+```bash
+composer install
+bin/install-wp-tests.sh wp_test root root 127.0.0.1 latest   # one-time
+composer test                 # all suites
+composer test:unit            # unit only
+composer test:integration     # integration only
+```
+
+CI runs the suite across PHP 7.4/8.1/8.3 × WordPress 6.5/latest (see `.github/workflows/ci.yml`).
 
 ### Code Quality
 - **PSR-12** coding standards

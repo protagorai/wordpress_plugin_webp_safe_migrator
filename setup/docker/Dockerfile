@@ -36,6 +36,7 @@ RUN docker-php-ext-configure gd \
     --with-freetype \
     --with-jpeg \
     --with-webp \
+    --with-avif \
     && docker-php-ext-install -j$(nproc) \
     gd \
     exif \

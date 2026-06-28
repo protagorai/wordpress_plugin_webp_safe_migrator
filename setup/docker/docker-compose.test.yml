@@ -1,0 +1,47 @@
+# Ephemeral integration-test stack for WebP Safe Migrator.
+#
+# Run:  docker compose -f setup/docker/docker-compose.test.yml up --build \
+#         --abort-on-container-exit --exit-code-from tests
+# or simply:  bin/test.sh
+#
+# Nothing here touches the development app stack (docker-compose.yml). The DB is
+# in-memory (tmpfs) and torn down with the run.
+name: webp-migrator-test
+
+services:
+  test-db:
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: wp_test
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  tests:
+    build:
+      context: ../..
+      dockerfile: setup/docker/Dockerfile.test
+    depends_on:
+      test-db:
+        condition: service_healthy
+    environment:
+      WP_TESTS_DIR: /tmp/wordpress-tests-lib
+      WP_CORE_DIR: /tmp/wordpress
+      # Pass-through from the host (bin/coverage.sh sets this to "coverage").
+      XDEBUG_MODE: ${XDEBUG_MODE:-off}
+    volumes:
+      - ../..:/app
+    working_dir: /app
+    command:
+      - bash
+      - -lc
+      - >
+        composer install --no-interaction --no-progress &&
+        bash bin/install-wp-tests.sh wp_test root root test-db ${WP_VERSION:-latest} true &&
+        mkdir -p build/coverage &&
+        vendor/bin/phpunit ${PHPUNIT_FLAGS:-}
