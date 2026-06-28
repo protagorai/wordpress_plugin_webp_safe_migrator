@@ -321,6 +321,8 @@ composer test:integration     # integration only
 
 CI runs the suite across PHP 7.4/8.1/8.3 × WordPress 6.5/latest (see `.github/workflows/ci.yml`).
 
+**Status:** 70 tests passing; ~79% line / ~75% branch coverage (tiered). See **[OUTSTANDING_WORK.md](OUTSTANDING_WORK.md)** for what's done and what remains, and **[review.md](review.md)** for the full code review.
+
 ### Code Quality
 - **PSR-12** coding standards
 - **WordPress** coding standards compliance
